@@ -68,6 +68,7 @@ async def translate_pdf(
 
     knowledge_profile = knowledge.load_profile(knowledge_name) if knowledge_name else None
     config = Pdf2zhConfig(
+        provider="argos" if provider == "argos" else "openai_compatible",
         source_language=normalize_language_code(source_language, fallback="en"),
         target_language=normalize_language_code(target_language, fallback="zh"),
         api_key=api_key,

@@ -17,6 +17,7 @@ from .knowledge import render_profile
 
 @dataclass(frozen=True)
 class Pdf2zhConfig:
+    provider: str = "openai_compatible"  # openai_compatible | argos
     source_language: str = "en"
     target_language: str = "zh"
     api_key: str | None = None
@@ -60,12 +61,14 @@ def _translate_with_pdf2zh_sync(
     config: Pdf2zhConfig,
     log_callback: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
-    if not config.api_key:
-        raise Pdf2zhError("API key is required.")
-    if not config.base_url:
-        raise Pdf2zhError("Base URL is required.")
-    if not config.model:
-        raise Pdf2zhError("Model is required.")
+    is_argos = config.provider == "argos"
+    if not is_argos:
+        if not config.api_key:
+            raise Pdf2zhError("API key is required.")
+        if not config.base_url:
+            raise Pdf2zhError("Base URL is required.")
+        if not config.model:
+            raise Pdf2zhError("Model is required.")
 
     pdf2zh_cmd = shutil.which("pdf2zh")
     if not pdf2zh_cmd:
@@ -84,15 +87,22 @@ def _translate_with_pdf2zh_sync(
         {
             "HOME": str(home_dir),
             "USERPROFILE": str(home_dir),
-            "OPENAILIKED_BASE_URL": config.base_url.rstrip("/"),
-            "OPENAILIKED_API_KEY": config.api_key,
-            "OPENAILIKED_MODEL": config.model,
             "PYTHONIOENCODING": "utf-8",
         }
     )
+    if not is_argos:
+        env.update(
+            {
+                "OPENAILIKED_BASE_URL": config.base_url.rstrip("/"),
+                "OPENAILIKED_API_KEY": config.api_key,
+                "OPENAILIKED_MODEL": config.model,
+            }
+        )
 
-    service = f"openailiked:{config.model}"
-    if config.use_babeldoc:
+    # Argos 仅走可打补丁的 babeldoc 路径（legacy 走真实 pdf2zh 二进制，无法修其 bug）。
+    use_babeldoc = config.use_babeldoc or is_argos
+    service = "argos" if is_argos else f"openailiked:{config.model}"
+    if use_babeldoc:
         command = [
             _python_for_pdf2zh(pdf2zh_cmd),
             "-m",
@@ -127,18 +137,23 @@ def _translate_with_pdf2zh_sync(
             "--ignore-cache",
         ]
     document_context = build_document_context(input_path, config.target_language)
-    knowledge_text, glossary_hits, knowledge_source = _resolve_knowledge(
-        config, document_context, log_callback=log_callback
-    )
-    prompt_path = write_prompt_file(
-        work_dir,
-        config.prompt
-        or default_translation_prompt(
-            config.target_language,
-            document_context,
-            knowledge_text,
-        ),
-    )
+    if is_argos:
+        # Argos 是神经机器翻译，不吃提示词，知识库（术语/风格）对它不生效。
+        knowledge_text, glossary_hits, knowledge_source = "", 0, "none"
+        prompt_path = None
+    else:
+        knowledge_text, glossary_hits, knowledge_source = _resolve_knowledge(
+            config, document_context, log_callback=log_callback
+        )
+        prompt_path = write_prompt_file(
+            work_dir,
+            config.prompt
+            or default_translation_prompt(
+                config.target_language,
+                document_context,
+                knowledge_text,
+            ),
+        )
     if prompt_path:
         command.extend(["--prompt", str(prompt_path)])
 
@@ -158,7 +173,7 @@ def _translate_with_pdf2zh_sync(
     fallback_pages: list[int] = []
     fallback_error = None
     initial_quality_warnings = scan_pdf_quality(output_path)
-    if config.use_babeldoc and initial_quality_warnings:
+    if use_babeldoc and not is_argos and initial_quality_warnings:
         fallback_pages = [int(warning["page"]) for warning in initial_quality_warnings]
         try:
             fallback_output_path, fallback_output = run_legacy_fallback(
@@ -184,7 +199,7 @@ def _translate_with_pdf2zh_sync(
     quality_warnings = scan_pdf_quality(output_path)
     return {
         "pages": _count_pages(output_path),
-        "engine": "pdf2zh-babeldoc" if config.use_babeldoc else "pdf2zh",
+        "engine": ("argos-babeldoc" if is_argos else "pdf2zh-babeldoc") if use_babeldoc else "pdf2zh",
         "preserved_pages": preserved_pages,
         "fallback_pages": fallback_pages,
         "fallback_error": fallback_error,

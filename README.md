@@ -5,7 +5,7 @@
 ## 功能
 
 - 左右双栏 PDF 预览：原文 PDF 与译文 PDF 同屏对照。
-- OpenAI-compatible API：支持 DeepSeek、OpenAI-compatible 网关等模型服务。
+- 多翻译后端：OpenAI-compatible 网关（DeepSeek 等）、Argos 离线翻译（开源 NMT，无需 Key）、Mock 版式测试。
 - BabelDOC/pdf2zh 版式重建：尽量保留图片、表格、公式和页面布局。
 - 结构化翻译知识库：术语对照表 + 风格规则 + 禁译表，存服务端、可保存多套、导入导出；翻译时按文档命中过滤术语再注入提示词。
 - MCP 术语检索（可选）：内置术语 MCP Server，翻译前实时检索术语；不可用时自动回退本地知识库。在「接入设置 → 知识来源」切换。

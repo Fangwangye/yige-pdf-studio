@@ -184,9 +184,10 @@ translateButton.addEventListener("click", async () => {
   formData.append("knowledge_source", knowledgeSource.value || "local");
 
   translateButton.disabled = true;
-  const statusText = provider.value === "mock"
-    ? "正在复制 PDF 用于版式预览..."
-    : "正在调用 pdf2zh/BabelDOC 翻译并重建 PDF，论文可能需要几分钟...";
+  const statusText = {
+    mock: "正在复制 PDF 用于版式预览...",
+    argos: "正在用 Argos 离线引擎翻译并重建 PDF（首次会下载语言模型）...",
+  }[provider.value] || "正在调用 pdf2zh/BabelDOC 翻译并重建 PDF，论文可能需要几分钟...";
   setStatus(statusText);
 
   try {
@@ -566,10 +567,14 @@ const connText = document.querySelector("#connText");
 
 function refreshConnState() {
   const isMock = provider.value === "mock";
+  const isArgos = provider.value === "argos";
   const hasKey = Boolean(apiKey.value.trim());
   if (isMock) {
     connDot.classList.remove("is-live");
     connText.textContent = "Mock 版式测试";
+  } else if (isArgos) {
+    connDot.classList.add("is-live");
+    connText.textContent = "Argos 离线（无需 Key）";
   } else if (hasKey) {
     connDot.classList.add("is-live");
     connText.textContent = `${model.value.trim() || "已配置"} · 已连接`;
