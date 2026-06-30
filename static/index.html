@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>译格 PDF Studio</title>
+    <link rel="stylesheet" href="/styles.css?v=20260629-knowledge-base" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Yige PDF Studio</p>
+          <h1>译格 PDF 工作台</h1>
+        </div>
+        <a class="download-link is-disabled" id="downloadLink" href="#" download>下载译文 PDF</a>
+      </header>
+
+      <section class="control-band" aria-label="翻译设置">
+        <label class="file-picker">
+          <span>选择 PDF</span>
+          <input id="pdfFile" type="file" accept="application/pdf" />
+        </label>
+
+        <label>
+          <span>源语言</span>
+          <input id="sourceLanguage" type="text" value="en" autocomplete="off" />
+        </label>
+
+        <label>
+          <span>目标语言</span>
+          <input id="targetLanguage" type="text" value="zh" autocomplete="off" />
+        </label>
+
+        <label>
+          <span>服务商</span>
+          <select id="provider">
+            <option value="openai_compatible" selected>DeepSeek / OpenAI-compatible</option>
+            <option value="mock">Mock 版式测试</option>
+          </select>
+        </label>
+
+        <label>
+          <span>版式引擎</span>
+          <select id="layoutEngine">
+            <option value="babeldoc" selected>BabelDOC</option>
+            <option value="legacy">pdf2zh legacy</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Base URL</span>
+          <input id="baseUrl" type="url" value="https://api.deepseek.com/v1" placeholder="https://api.example.com/v1" />
+        </label>
+
+        <label>
+          <span>模型</span>
+          <input id="model" type="text" value="deepseek-v4-pro" placeholder="deepseek-v4-pro" autocomplete="off" />
+        </label>
+
+        <label>
+          <span>API Key</span>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        </label>
+
+        <label class="toggle-field">
+          <input id="preserveToc" type="checkbox" checked />
+          <span>保留目录页</span>
+        </label>
+
+        <label>
+          <span>保留页码</span>
+          <input id="protectedPages" type="text" placeholder="2,4-5" autocomplete="off" />
+        </label>
+
+        <button id="translateButton" type="button">开始翻译</button>
+      </section>
+
+      <section class="knowledge-band" aria-label="翻译知识库">
+        <div class="knowledge-header">
+          <label>
+            <span>知识库配置</span>
+            <select id="knowledgeProfile"></select>
+          </label>
+          <label>
+            <span>配置名称</span>
+            <input id="knowledgeProfileName" type="text" value="学术论文" autocomplete="off" />
+          </label>
+          <button id="newKnowledgeProfile" class="secondary-button" type="button">新建</button>
+          <button id="saveKnowledgeProfile" type="button">保存知识库</button>
+          <button id="exportKnowledgeProfile" class="secondary-button" type="button">导出</button>
+          <label class="file-action">
+            <span>导入</span>
+            <input id="importKnowledgeProfile" type="file" accept="application/json" />
+          </label>
+          <button id="deleteKnowledgeProfile" class="secondary-button" type="button">删除</button>
+        </div>
+        <label class="knowledge-editor">
+          <span>术语、风格、禁译和偏好规则</span>
+          <textarea id="knowledgeBase" spellcheck="false">术语：
+large language model = 大语言模型
+scaling law = 缩放定律
+pre-training = 预训练
+fine-tuning = 微调
+alignment = 对齐
+
+风格：
+使用正式、流畅的学术中文。不要逐词硬翻，保持论文语气。
+模型名、数据集名、方法名和引用保留英文原文。
+首次出现的重要英文术语可采用“中文译名（English Term）”。</textarea>
+        </label>
+      </section>
+
+      <section class="status-line" id="statusLine">等待上传 PDF。</section>
+
+      <section class="preview-grid" aria-label="PDF 预览">
+        <article class="preview-pane">
+          <div class="pane-header">
+            <h2>待翻译 PDF</h2>
+            <span id="sourceMeta">未选择</span>
+          </div>
+          <iframe id="sourcePreview" title="待翻译 PDF 预览"></iframe>
+        </article>
+
+        <article class="preview-pane">
+          <div class="pane-header">
+            <h2>翻译后 PDF</h2>
+            <div class="pane-actions">
+              <a id="openPreviewLink" class="pane-link is-disabled" href="#" target="_blank" rel="noreferrer">打开预览</a>
+              <span id="translatedMeta">未生成</span>
+            </div>
+          </div>
+          <iframe id="translatedPreview" title="翻译后 PDF 预览"></iframe>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js?v=20260629-knowledge-base" defer></script>
+  </body>
+</html>

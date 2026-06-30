@@ -1,0 +1,84 @@
+# 译格 PDF Studio
+
+本项目是一个本地 Web 版 PDF 翻译工作台：左侧预览原 PDF，右侧预览翻译后的 PDF，并支持接入 OpenAI-compatible 三方翻译 API。
+
+## 功能
+
+- 左右双栏 PDF 预览：原文 PDF 与译文 PDF 同屏对照。
+- OpenAI-compatible API：支持 DeepSeek、OpenAI-compatible 网关等模型服务。
+- BabelDOC/pdf2zh 版式重建：尽量保留图片、表格、公式和页面布局。
+- 翻译知识库：可在浏览器中创建、保存、导入、导出术语和风格规则。
+- 文档级上下文：自动抽取标题、摘要和高频术语，注入翻译提示词。
+- 跨页连续性：自动识别页尾到下一页页首的断句上下文，减少长文逻辑断裂。
+- 质量检查：扫描未解析占位符、乱码样字符和替换字符。
+- 异常页回退：对异常页可自动使用 legacy 引擎重跑并替换回最终 PDF。
+- 后台任务：长 PDF 翻译不阻塞 HTTP 请求，前端轮询任务状态。
+
+## 技术方案
+
+- 后端：FastAPI
+- PDF 处理：PDFMathTranslate / pdf2zh / BabelDOC
+- 前端：原生 HTML/CSS/JavaScript
+- 编码：所有源码使用 UTF-8
+
+PDF 生成策略调用 `pdf2zh` 与 BabelDOC：先做版面解析，再翻译并重新渲染 PDF。Mock 模式只复制原 PDF，用于确认左右预览和下载流程。
+
+## 运行
+
+```powershell
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
+
+打开：
+
+```text
+http://127.0.0.1:8010/
+```
+
+## 任务流程
+
+翻译接口采用后台任务模式，避免长 PDF 翻译导致 HTTP 请求超时：
+
+- `POST /api/translate`：上传 PDF 并创建任务，返回 `job_id`、`status_url`、`download_url`
+- `GET /api/jobs/{job_id}`：查询任务状态，状态包括 `queued`、`running`、`succeeded`、`failed`
+- `GET /api/preview/{job_id}`：内嵌预览译文 PDF
+- `GET /api/files/{job_id}`：下载译文 PDF
+
+前端会自动轮询任务状态，只有 `succeeded` 后才加载右侧 PDF。失败时会展示 `pdf2zh/BabelDOC` 的错误摘要。
+
+## 三方 API
+
+当前通过 `pdf2zh` 的 `openailiked` 服务实现 `OpenAI-compatible` 模式。Base URL 填到 `/v1` 这一层，例如：
+
+```text
+https://api.example.com/v1
+```
+
+没有 API Key 时可以选择 `Mock 版式测试`，它不会翻译，只复制原 PDF 到右侧，验证界面流程。
+
+## 知识库格式
+
+知识库是纯文本规则，前端会保存在浏览器 `localStorage`，也可以导出为 JSON。推荐格式：
+
+```text
+术语：
+large language model = 大语言模型
+scaling law = 缩放定律
+pre-training = 预训练
+
+风格：
+使用正式、流畅的学术中文。不要逐词硬翻，保持论文语气。
+
+禁译：
+模型名、数据集名、方法名、代码、公式和引用保留原文。
+```
+
+后端会将知识库和自动抽取的文档上下文合并进 prompt。知识库优先级高于自动上下文，但不会覆盖占位符、公式、引用保护规则。
+
+## 当前限制
+
+- `pdf2zh` 首次运行会初始化模型、字体和缓存，可能比较慢。
+- 输出质量主要取决于 PDF 复杂度和翻译模型；PDF 天然不是结构化编辑格式，无法对所有文件承诺 100% 完全一致。
+- 扫描版 PDF 需要 OCR 路径；后续可继续接 BabelDOC/OCR workaround 配置。
+- 默认以质量优先，翻译线程数为 1，速度会比并发翻译慢。

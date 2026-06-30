@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+storage/uploads/*
+storage/outputs/*
+storage/work/*
+storage/jobs/*
+storage/cache/*
+storage/pdf2zh-home/*
+storage/*.log
