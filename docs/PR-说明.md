@@ -36,5 +36,3 @@
 ## 已知限制
 - Argos 首次需联网下载语言包；Argos 为 NMT，不吃提示词，知识库对其不生效。
 - 真实翻译质量需本地配 Key / 装 argostranslate 后端到端实测。
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
