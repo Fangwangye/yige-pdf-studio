@@ -1,6 +1,6 @@
-# Skill 接入规范（三期 · 草案）
+# Skill 接入规范（三期 · 已实现）
 
-> 状态：规划中，依赖一/二期稳定的 HTTP API。本文定义封装契约。
+> 状态：✅ 已落地。Skill 目录：`.claude/skills/translate-pdf/`（`SKILL.md` + 入口脚本 `translate_pdf.py`，仅标准库）。复用运行中的 HTTP API（创建任务→轮询→取报告），不重写引擎。下文为契约说明。
 
 ## 目标
 
