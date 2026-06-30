@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260630-kb" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-kb-mcp" />
   </head>
   <body>
     <div class="layout">
@@ -234,7 +234,15 @@
                     <input id="preserveToc" type="checkbox" checked />
                     <span>保留目录页</span>
                   </label>
+                  <label class="field">
+                    <span>知识来源</span>
+                    <select id="knowledgeSource">
+                      <option value="local" selected>本地知识库</option>
+                      <option value="mcp">MCP 检索（实验）</option>
+                    </select>
+                  </label>
                 </div>
+                <p class="card-desc">MCP 检索会连接内置术语 Server 实时检索术语；不可用时自动回退本地知识库（详见 <a href="#" data-view="help">路线图</a>）。</p>
               </article>
             </div>
           </section>
@@ -280,6 +288,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260630-kb" defer></script>
+    <script src="/app.js?v=20260630-kb-mcp" defer></script>
   </body>
 </html>

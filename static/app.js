@@ -9,6 +9,7 @@ const model = document.querySelector("#model");
 const apiKey = document.querySelector("#apiKey");
 const preserveToc = document.querySelector("#preserveToc");
 const protectedPages = document.querySelector("#protectedPages");
+const knowledgeSource = document.querySelector("#knowledgeSource");
 const knowledgeProfile = document.querySelector("#knowledgeProfile");
 const knowledgeProfileName = document.querySelector("#knowledgeProfileName");
 const glossaryBody = document.querySelector("#glossaryBody");
@@ -180,6 +181,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("preserve_toc", preserveToc.checked ? "true" : "false");
   formData.append("protected_pages", protectedPages.value.trim());
   formData.append("knowledge_name", knowledgeProfile.value || "");
+  formData.append("knowledge_source", knowledgeSource.value || "local");
 
   translateButton.disabled = true;
   const statusText = provider.value === "mock"
@@ -251,8 +253,14 @@ async function pollJob(statusUrl, downloadUrl, previewUrl, sourceUrl) {
         ? ` · 质检提示 ${warnings.map((item) => item.page).join(", ")} 页`
         : "";
       const pageBridges = job.stats.page_bridges ? ` · 跨页上下文 ${job.stats.page_bridges} 处` : "";
+      const sourceLabels = {
+        mcp: "MCP",
+        "mcp-fallback-local": "MCP→本地",
+        local: "本地",
+        legacy: "旧版",
+      };
       const knowledge = job.stats.knowledge_base_applied
-        ? ` · 知识库命中 ${job.stats.glossary_hits ?? 0} 术语`
+        ? ` · 知识库[${sourceLabels[job.stats.knowledge_source] || "本地"}]命中 ${job.stats.glossary_hits ?? 0} 术语`
         : "";
       translatedMeta.textContent = `${job.stats.pages} 页 · ${job.stats.engine || "pdf2zh"}${preserved}${fallback}${pageBridges}${knowledge}${warningText}`;
       downloadLink.href = downloadUrl;

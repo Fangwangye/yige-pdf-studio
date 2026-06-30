@@ -51,6 +51,7 @@ async def translate_pdf(
     protected_pages: str | None = Form(None),
     knowledge_base: str | None = Form(None),
     knowledge_name: str | None = Form(None),
+    knowledge_source: str = Form("local"),
 ) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -78,6 +79,7 @@ async def translate_pdf(
         protected_pages=parse_page_list(protected_pages),
         knowledge_base=knowledge_base,
         knowledge_profile=knowledge_profile,
+        knowledge_source="mcp" if knowledge_source == "mcp" else "local",
     )
     _write_job_status(
         job_id,
@@ -104,6 +106,7 @@ async def translate_pdf(
                 "preserve_toc": preserve_toc,
                 "protected_pages": protected_pages or "",
                 "knowledge_name": (knowledge_profile or {}).get("name") if knowledge_profile else None,
+                "knowledge_source": "mcp" if knowledge_source == "mcp" else "local",
                 "knowledge_base_applied": bool(
                     knowledge_profile or (knowledge_base and knowledge_base.strip())
                 ),
@@ -377,6 +380,13 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
     knowledge_applied = bool(stats.get("knowledge_base_applied") or settings.get("knowledge_base_applied"))
     glossary_hits = stats.get("glossary_hits") if isinstance(stats.get("glossary_hits"), int) else 0
     knowledge_name = settings.get("knowledge_name")
+    source_used = stats.get("knowledge_source") or settings.get("knowledge_source") or "local"
+    source_label = {
+        "mcp": "MCP 检索",
+        "mcp-fallback-local": "MCP→本地回退",
+        "local": "本地知识库",
+        "legacy": "旧版文本",
+    }.get(str(source_used), "本地知识库")
     checks = [
         {
             "name": "页面生成",
@@ -402,7 +412,7 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
             "name": "知识库",
             "status": "pass" if knowledge_applied else "idle",
             "detail": (
-                f"{knowledge_name or '用户知识库'} · 命中术语 {glossary_hits} 个"
+                f"{knowledge_name or '用户知识库'} · {source_label} · 命中术语 {glossary_hits} 个"
                 if knowledge_applied
                 else "未应用"
             ),

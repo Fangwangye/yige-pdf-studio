@@ -29,6 +29,7 @@ class Pdf2zhConfig:
     prompt: str | None = None
     knowledge_base: str | None = None
     knowledge_profile: dict | None = None
+    knowledge_source: str = "local"  # "local" | "mcp"
 
 
 class Pdf2zhError(RuntimeError):
@@ -126,7 +127,9 @@ def _translate_with_pdf2zh_sync(
             "--ignore-cache",
         ]
     document_context = build_document_context(input_path, config.target_language)
-    knowledge_text, glossary_hits = _resolve_knowledge(config, document_context)
+    knowledge_text, glossary_hits, knowledge_source = _resolve_knowledge(
+        config, document_context, log_callback=log_callback
+    )
     prompt_path = write_prompt_file(
         work_dir,
         config.prompt
@@ -190,6 +193,7 @@ def _translate_with_pdf2zh_sync(
         "page_bridges": len(document_context["page_bridges"]),
         "knowledge_base_applied": bool(knowledge_text),
         "glossary_hits": glossary_hits,
+        "knowledge_source": knowledge_source,
         "log_tail": _tail(process_output),
     }
 
@@ -305,16 +309,43 @@ def build_document_context(input_path: Path, target_language: str) -> dict[str, 
 
 
 def _resolve_knowledge(
-    config: "Pdf2zhConfig", document_context: dict[str, object]
-) -> tuple[str, int]:
-    """决定本次翻译注入的知识库文本与命中术语数。
+    config: "Pdf2zhConfig",
+    document_context: dict[str, object],
+    log_callback: Callable[[str], None] | None = None,
+) -> tuple[str, int, str]:
+    """决定本次翻译注入的知识库文本、命中术语数与实际使用的来源。
 
-    优先使用结构化知识库（按文档命中过滤术语）；否则回退旧版纯文本。
+    来源优先级：
+    - knowledge_source == "mcp"：MCP 实时检索；失败/为空时回退本地结构化知识库。
+    - 否则：本地结构化知识库（按文档命中过滤）；再退旧版纯文本。
     """
-    if config.knowledge_profile:
-        document_text = str(document_context.get("full_text") or "")
-        return render_profile(config.knowledge_profile, document_text)
-    return normalize_knowledge_base(config.knowledge_base), 0
+    document_text = str(document_context.get("full_text") or "")
+
+    def _local() -> tuple[str, int, str]:
+        if config.knowledge_profile:
+            text, hits = render_profile(config.knowledge_profile, document_text)
+            return text, hits, "local"
+        return normalize_knowledge_base(config.knowledge_base), 0, "legacy"
+
+    if config.knowledge_source == "mcp":
+        try:
+            from .mcp_client import retrieve_knowledge
+
+            domain = (config.knowledge_profile or {}).get("name", "") if config.knowledge_profile else ""
+            text, hits = retrieve_knowledge(document_text, domain=domain)
+            if text:
+                if log_callback:
+                    log_callback(f"MCP 知识检索命中 {hits} 个术语。")
+                return text, hits, "mcp"
+            if log_callback:
+                log_callback("MCP 检索为空，回退本地知识库。")
+        except Exception as exc:  # noqa: BLE001 —— 任何失败都回退，不阻塞翻译
+            if log_callback:
+                log_callback(f"MCP 检索失败，回退本地知识库：{exc}")
+        text, hits, _ = _local()
+        return text, hits, "mcp-fallback-local"
+
+    return _local()
 
 
 def _extract_title(text: str) -> str:
