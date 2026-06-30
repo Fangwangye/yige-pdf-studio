@@ -3,6 +3,7 @@ const sourceLanguage = document.querySelector("#sourceLanguage");
 const targetLanguage = document.querySelector("#targetLanguage");
 const provider = document.querySelector("#provider");
 const layoutEngine = document.querySelector("#layoutEngine");
+const qualityMode = document.querySelector("#qualityMode");
 const baseUrl = document.querySelector("#baseUrl");
 const model = document.querySelector("#model");
 const apiKey = document.querySelector("#apiKey");
@@ -24,6 +25,10 @@ const sourceMeta = document.querySelector("#sourceMeta");
 const translatedMeta = document.querySelector("#translatedMeta");
 const downloadLink = document.querySelector("#downloadLink");
 const openPreviewLink = document.querySelector("#openPreviewLink");
+const refreshJobs = document.querySelector("#refreshJobs");
+const jobHistory = document.querySelector("#jobHistory");
+const qualityReport = document.querySelector("#qualityReport");
+const qualityMeta = document.querySelector("#qualityMeta");
 
 let sourceObjectUrl = null;
 const knowledgeStorageKey = "pdfTranslateKnowledgeProfiles";
@@ -60,6 +65,9 @@ termination = 终止
 });
 
 initializeKnowledgeProfiles();
+refreshJobHistory();
+
+refreshJobs.addEventListener("click", refreshJobHistory);
 
 knowledgeProfile.addEventListener("change", () => {
   const profiles = loadKnowledgeProfiles();
@@ -197,6 +205,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("file", file);
   formData.append("provider", provider.value);
   formData.append("layout_engine", layoutEngine.value);
+  formData.append("quality_mode", qualityMode.value);
   formData.append("source_language", sourceLanguage.value.trim() || "en");
   formData.append("target_language", targetLanguage.value.trim() || "zh");
   formData.append("base_url", baseUrl.value.trim());
@@ -223,11 +232,14 @@ translateButton.addEventListener("click", async () => {
       throw new Error(data.detail || "翻译失败");
     }
 
-    await pollJob(
+    const completedJob = await pollJob(
       data.status_url,
       data.attachment_url || data.download_url,
       data.preview_url || `/api/preview/${data.job_id}`,
+      data.source_url || `/api/source/${data.job_id}`,
     );
+    await renderQualityReport(completedJob.job_id);
+    await refreshJobHistory();
   } catch (error) {
     setStatus(error.message || "翻译失败", true);
   } finally {
@@ -235,7 +247,7 @@ translateButton.addEventListener("click", async () => {
   }
 });
 
-async function pollJob(statusUrl, downloadUrl, previewUrl) {
+async function pollJob(statusUrl, downloadUrl, previewUrl, sourceUrl) {
   while (true) {
     await wait(1600);
     const response = await fetch(`${statusUrl}?t=${Date.now()}`);
@@ -260,10 +272,7 @@ async function pollJob(statusUrl, downloadUrl, previewUrl) {
     }
 
     if (job.state === "succeeded") {
-      const previewTarget = previewUrl || job.preview_url || (job.job_id ? `/api/preview/${job.job_id}` : downloadUrl);
-      const pdfUrl = `${previewTarget}?t=${Date.now()}`;
-      translatedPreview.src = pdfUrl;
-      openPreviewLink.href = pdfUrl;
+      loadJobPreview(job, previewUrl, sourceUrl);
       openPreviewLink.classList.remove("is-disabled");
       const preserved = job.stats.preserved_pages?.length
         ? ` · 保留目录页 ${job.stats.preserved_pages.join(", ")}`
@@ -285,8 +294,110 @@ async function pollJob(statusUrl, downloadUrl, previewUrl) {
       } else {
         setStatus("翻译完成。右侧已生成译文 PDF。");
       }
-      return;
+      return job;
     }
+  }
+}
+
+function loadJobPreview(job, previewUrl, sourceUrl) {
+  const previewTarget = previewUrl || job.preview_url || (job.job_id ? `/api/preview/${job.job_id}` : job.download_url);
+  const sourceTarget = sourceUrl || job.source_url || (job.job_id ? `/api/source/${job.job_id}` : null);
+  const cacheBust = Date.now();
+  if (sourceTarget) {
+    sourcePreview.src = `${sourceTarget}?t=${cacheBust}`;
+    sourceMeta.textContent = job.source_filename || "历史源文 PDF";
+  }
+  if (previewTarget) {
+    const pdfUrl = `${previewTarget}?t=${cacheBust}`;
+    translatedPreview.src = pdfUrl;
+    openPreviewLink.href = pdfUrl;
+    openPreviewLink.classList.remove("is-disabled");
+    downloadLink.href = job.attachment_url || job.download_url || previewTarget;
+    downloadLink.classList.remove("is-disabled");
+  }
+}
+
+async function refreshJobHistory() {
+  try {
+    const response = await fetch(`/api/jobs?t=${Date.now()}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || "任务历史加载失败");
+    }
+    renderJobHistory(data.jobs || []);
+  } catch (error) {
+    jobHistory.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "任务历史加载失败")}</div>`;
+  }
+}
+
+function renderJobHistory(jobs) {
+  if (!jobs.length) {
+    jobHistory.innerHTML = `<div class="empty-state">还没有翻译任务。</div>`;
+    return;
+  }
+  jobHistory.innerHTML = "";
+  for (const job of jobs) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `job-item state-${job.state || "unknown"}`;
+    item.innerHTML = `
+      <span class="job-title">${escapeHtml(job.source_filename || job.job_id)}</span>
+      <span class="job-subtitle">${escapeHtml(formatJobSubtitle(job))}</span>
+    `;
+    item.addEventListener("click", async () => {
+      const statusResponse = await fetch(`${job.status_url}?t=${Date.now()}`);
+      const fullJob = await statusResponse.json();
+      loadJobPreview(fullJob, fullJob.preview_url, fullJob.source_url);
+      await renderQualityReport(fullJob.job_id);
+      setStatus(`已载入历史任务：${fullJob.source_filename || fullJob.job_id}`);
+    });
+    jobHistory.append(item);
+  }
+}
+
+function formatJobSubtitle(job) {
+  const parts = [
+    job.state,
+    job.pages ? `${job.pages} 页` : "",
+    job.model || "",
+    job.quality_warnings_count ? `质检 ${job.quality_warnings_count}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+async function renderQualityReport(jobId) {
+  if (!jobId) {
+    qualityMeta.textContent = "暂无任务";
+    qualityReport.innerHTML = "";
+    return;
+  }
+  const response = await fetch(`/api/jobs/${jobId}/report?t=${Date.now()}`);
+  const report = await response.json();
+  if (!response.ok) {
+    throw new Error(report.detail || "质量报告加载失败");
+  }
+  qualityMeta.textContent = report.source_filename || jobId;
+  qualityReport.innerHTML = "";
+  for (const check of report.checks || []) {
+    const row = document.createElement("div");
+    row.className = `quality-check status-${check.status}`;
+    row.innerHTML = `
+      <span class="check-name">${escapeHtml(check.name)}</span>
+      <span class="check-detail">${escapeHtml(check.detail)}</span>
+    `;
+    qualityReport.append(row);
+  }
+  if (report.warnings?.length) {
+    const warningBlock = document.createElement("div");
+    warningBlock.className = "warning-block";
+    warningBlock.innerHTML = `<strong>需复查页：</strong>${report.warnings.map((item) => `第 ${item.page} 页`).join("、")}`;
+    qualityReport.append(warningBlock);
+  }
+  if (report.error) {
+    const errorBlock = document.createElement("div");
+    errorBlock.className = "warning-block is-error";
+    errorBlock.textContent = report.error;
+    qualityReport.append(errorBlock);
   }
 }
 
@@ -354,4 +465,13 @@ function formatBytes(value) {
     return `${(value / 1024).toFixed(1)} KB`;
   }
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }

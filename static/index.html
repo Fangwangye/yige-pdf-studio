@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260629-knowledge-base" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-product-workflow" />
   </head>
   <body>
     <main class="app-shell">
@@ -45,6 +45,15 @@
           <select id="layoutEngine">
             <option value="babeldoc" selected>BabelDOC</option>
             <option value="legacy">pdf2zh legacy</option>
+          </select>
+        </label>
+
+        <label>
+          <span>质量模式</span>
+          <select id="qualityMode">
+            <option value="quality" selected>质量优先</option>
+            <option value="balanced">均衡</option>
+            <option value="fast">速度优先</option>
           </select>
         </label>
 
@@ -113,6 +122,24 @@ alignment = 对齐
 
       <section class="status-line" id="statusLine">等待上传 PDF。</section>
 
+      <section class="operations-grid" aria-label="任务与质检">
+        <article class="ops-card">
+          <div class="ops-header">
+            <h2>任务历史</h2>
+            <button id="refreshJobs" class="secondary-button" type="button">刷新</button>
+          </div>
+          <div id="jobHistory" class="job-history"></div>
+        </article>
+
+        <article class="ops-card">
+          <div class="ops-header">
+            <h2>质量报告</h2>
+            <span id="qualityMeta">暂无任务</span>
+          </div>
+          <div id="qualityReport" class="quality-report"></div>
+        </article>
+      </section>
+
       <section class="preview-grid" aria-label="PDF 预览">
         <article class="preview-pane">
           <div class="pane-header">
@@ -135,6 +162,6 @@ alignment = 对齐
       </section>
     </main>
 
-    <script src="/app.js?v=20260629-knowledge-base" defer></script>
+    <script src="/app.js?v=20260630-product-workflow" defer></script>
   </body>
 </html>

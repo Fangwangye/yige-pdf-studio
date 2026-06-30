@@ -44,6 +44,7 @@ async def translate_pdf(
     base_url: str | None = Form(None),
     model: str | None = Form(None),
     layout_engine: str = Form("babeldoc"),
+    quality_mode: str = Form("quality"),
     preserve_toc: bool = Form(True),
     protected_pages: str | None = Form(None),
     knowledge_base: str | None = Form(None),
@@ -67,6 +68,7 @@ async def translate_pdf(
         api_key=api_key,
         base_url=base_url,
         model=model,
+        thread_count=thread_count_for_quality_mode(quality_mode),
         use_babeldoc=layout_engine != "legacy",
         preserve_toc=preserve_toc,
         protected_pages=parse_page_list(protected_pages),
@@ -81,10 +83,23 @@ async def translate_pdf(
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "source_filename": file.filename,
+            "source_url": f"/api/source/{job_id}",
             "download_url": f"/api/preview/{job_id}",
             "attachment_url": f"/api/files/{job_id}",
             "preview_url": f"/api/preview/{job_id}",
             "status_url": f"/api/jobs/{job_id}",
+            "settings": {
+                "source_language": normalize_language_code(source_language, fallback="en"),
+                "target_language": normalize_language_code(target_language, fallback="zh"),
+                "provider": provider,
+                "model": model,
+                "base_url": base_url,
+                "layout_engine": layout_engine,
+                "quality_mode": quality_mode,
+                "preserve_toc": preserve_toc,
+                "protected_pages": protected_pages or "",
+                "knowledge_base_applied": bool(knowledge_base and knowledge_base.strip()),
+            },
             "stats": None,
             "error": None,
             "log_tail": "",
@@ -105,8 +120,23 @@ async def translate_pdf(
         "download_url": f"/api/preview/{job_id}",
         "attachment_url": f"/api/files/{job_id}",
         "preview_url": f"/api/preview/{job_id}",
+        "source_url": f"/api/source/{job_id}",
         "status_url": f"/api/jobs/{job_id}",
     }
+
+
+@app.get("/api/jobs")
+def list_jobs(limit: int = 20) -> dict[str, object]:
+    JOB_DIR.mkdir(parents=True, exist_ok=True)
+    jobs: list[dict[str, object]] = []
+    for path in JOB_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        jobs.append(_job_summary(data))
+    jobs.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    return {"jobs": jobs[: max(1, min(limit, 100))]}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -118,6 +148,15 @@ def get_job_status(job_id: str) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@app.get("/api/jobs/{job_id}/report")
+def get_job_report(job_id: str) -> dict[str, object]:
+    _validate_job_id(job_id)
+    path = _job_status_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return _build_quality_report(json.loads(path.read_text(encoding="utf-8")))
+
+
 @app.get("/api/files/{job_id}")
 def get_output_pdf(job_id: str) -> FileResponse:
     return _pdf_response(job_id, inline=False)
@@ -126,6 +165,20 @@ def get_output_pdf(job_id: str) -> FileResponse:
 @app.get("/api/preview/{job_id}")
 def preview_output_pdf(job_id: str) -> FileResponse:
     return _pdf_response(job_id, inline=True)
+
+
+@app.get("/api/source/{job_id}")
+def preview_source_pdf(job_id: str) -> FileResponse:
+    _validate_job_id(job_id)
+    input_path = UPLOAD_DIR / f"{job_id}.pdf"
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Source PDF not found.")
+    return FileResponse(
+        input_path,
+        media_type="application/pdf",
+        filename=f"source-{job_id}.pdf",
+        content_disposition_type="inline",
+    )
 
 
 def _pdf_response(job_id: str, inline: bool) -> FileResponse:
@@ -246,6 +299,88 @@ def _replace_with_retry(source: Path, target: Path, attempts: int = 12) -> None:
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _job_summary(data: dict[str, object]) -> dict[str, object]:
+    stats = data.get("stats") if isinstance(data.get("stats"), dict) else {}
+    settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    warnings = stats.get("quality_warnings") if isinstance(stats, dict) else []
+    fallback_pages = stats.get("fallback_pages") if isinstance(stats.get("fallback_pages"), list) else []
+    return {
+        "job_id": data.get("job_id"),
+        "state": data.get("state"),
+        "source_filename": data.get("source_filename"),
+        "created_at": data.get("created_at"),
+        "updated_at": data.get("updated_at"),
+        "finished_at": data.get("finished_at"),
+        "pages": stats.get("pages") if isinstance(stats, dict) else None,
+        "engine": stats.get("engine") if isinstance(stats, dict) else None,
+        "quality_warnings_count": len(warnings) if isinstance(warnings, list) else 0,
+        "fallback_pages": fallback_pages,
+        "model": settings.get("model"),
+        "quality_mode": settings.get("quality_mode"),
+        "preview_url": data.get("preview_url"),
+        "source_url": data.get("source_url") or f"/api/source/{data.get('job_id')}",
+        "status_url": data.get("status_url"),
+        "report_url": f"/api/jobs/{data.get('job_id')}/report",
+    }
+
+
+def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
+    stats = data.get("stats") if isinstance(data.get("stats"), dict) else {}
+    settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    warnings = stats.get("quality_warnings") if isinstance(stats, dict) and isinstance(stats.get("quality_warnings"), list) else []
+    fallback_pages = stats.get("fallback_pages") if isinstance(stats, dict) and isinstance(stats.get("fallback_pages"), list) else []
+    preserved_pages = stats.get("preserved_pages") if isinstance(stats, dict) and isinstance(stats.get("preserved_pages"), list) else []
+    knowledge_applied = bool(stats.get("knowledge_base_applied") or settings.get("knowledge_base_applied"))
+    checks = [
+        {
+            "name": "页面生成",
+            "status": "pass" if data.get("state") == "succeeded" and stats.get("pages") else "pending",
+            "detail": f"{stats.get('pages', 0)} 页" if stats.get("pages") else "尚未生成译文 PDF",
+        },
+        {
+            "name": "占位符/乱码扫描",
+            "status": "pass" if not warnings else "warn",
+            "detail": "未发现疑似异常" if not warnings else f"{len(warnings)} 页需要复查",
+        },
+        {
+            "name": "异常页自动回退",
+            "status": "pass" if fallback_pages else "idle",
+            "detail": f"已回退 {', '.join(map(str, fallback_pages))} 页" if fallback_pages else "未触发",
+        },
+        {
+            "name": "跨页连续性",
+            "status": "pass" if stats.get("page_bridges") else "idle",
+            "detail": f"识别 {stats.get('page_bridges', 0)} 处跨页上下文",
+        },
+        {
+            "name": "知识库",
+            "status": "pass" if knowledge_applied else "idle",
+            "detail": "已选择用户知识库" if knowledge_applied else "未应用",
+        },
+    ]
+    return {
+        "job_id": data.get("job_id"),
+        "state": data.get("state"),
+        "source_filename": data.get("source_filename"),
+        "settings": settings,
+        "stats": stats,
+        "checks": checks,
+        "warnings": warnings,
+        "fallback_pages": fallback_pages,
+        "preserved_pages": preserved_pages,
+        "error": data.get("error"),
+    }
+
+
+def thread_count_for_quality_mode(value: str | None) -> int:
+    mapping = {
+        "quality": 1,
+        "balanced": 2,
+        "fast": 4,
+    }
+    return mapping.get((value or "quality").strip().lower(), 1)
 
 
 def normalize_language_code(value: str | None, fallback: str) -> str:

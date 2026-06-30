@@ -137,7 +137,7 @@ button:disabled,
 
 .control-band {
   display: grid;
-  grid-template-columns: minmax(170px, 1.1fr) minmax(80px, 0.45fr) minmax(80px, 0.45fr) minmax(150px, 0.75fr) minmax(130px, 0.65fr) minmax(170px, 1fr) minmax(130px, 0.75fr) minmax(150px, 0.9fr) minmax(94px, 0.45fr) minmax(95px, 0.45fr) auto;
+  grid-template-columns: minmax(170px, 1.1fr) minmax(74px, 0.38fr) minmax(74px, 0.38fr) minmax(145px, 0.72fr) minmax(124px, 0.58fr) minmax(112px, 0.56fr) minmax(166px, 0.95fr) minmax(128px, 0.68fr) minmax(145px, 0.82fr) minmax(94px, 0.42fr) minmax(92px, 0.42fr) auto;
   gap: 10px;
   align-items: end;
   background: rgba(251, 252, 248, 0.92);
@@ -263,6 +263,178 @@ textarea:focus {
   color: var(--danger);
 }
 
+.operations-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.4fr);
+  gap: 12px;
+}
+
+.ops-card {
+  min-width: 0;
+  border: 1px solid rgba(21, 23, 22, 0.1);
+  border-radius: 10px;
+  background: rgba(251, 252, 248, 0.92);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.ops-header {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px;
+}
+
+.ops-header span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-history {
+  max-height: 176px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.job-item {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--ink);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.job-item::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  position: absolute;
+}
+
+.job-item {
+  position: relative;
+  padding-left: 24px;
+}
+
+.job-item.state-succeeded::before {
+  background: var(--accent);
+}
+
+.job-item.state-failed::before {
+  background: var(--danger);
+}
+
+.job-item.state-running::before,
+.job-item.state-queued::before {
+  background: var(--warm);
+}
+
+.job-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.job-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quality-report {
+  min-height: 92px;
+  max-height: 176px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+
+.quality-check {
+  min-height: 68px;
+  display: grid;
+  align-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-strong);
+  padding: 9px;
+}
+
+.quality-check::before {
+  content: "待";
+  width: 24px;
+  height: 20px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ece8df;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.quality-check.status-pass::before {
+  content: "过";
+  background: rgba(13, 122, 104, 0.14);
+  color: var(--accent-dark);
+}
+
+.quality-check.status-warn::before {
+  content: "查";
+  background: rgba(184, 109, 44, 0.16);
+  color: #8b4e1d;
+}
+
+.check-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.check-detail {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.warning-block {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(184, 109, 44, 0.32);
+  border-radius: 7px;
+  background: rgba(184, 109, 44, 0.08);
+  color: #704017;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.warning-block.is-error {
+  border-color: rgba(166, 59, 42, 0.34);
+  background: rgba(166, 59, 42, 0.08);
+  color: var(--danger);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px;
+}
+
 .preview-grid {
   min-height: 0;
   display: grid;
@@ -336,6 +508,14 @@ iframe {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-report {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .control-band button,
   .knowledge-header button,
   .file-action {
@@ -359,6 +539,10 @@ iframe {
   }
 
   .knowledge-header {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-report {
     grid-template-columns: 1fr;
   }
 
