@@ -11,7 +11,10 @@ const preserveToc = document.querySelector("#preserveToc");
 const protectedPages = document.querySelector("#protectedPages");
 const knowledgeProfile = document.querySelector("#knowledgeProfile");
 const knowledgeProfileName = document.querySelector("#knowledgeProfileName");
-const knowledgeBase = document.querySelector("#knowledgeBase");
+const glossaryBody = document.querySelector("#glossaryBody");
+const addGlossaryRow = document.querySelector("#addGlossaryRow");
+const styleRules = document.querySelector("#styleRules");
+const doNotTranslate = document.querySelector("#doNotTranslate");
 const newKnowledgeProfile = document.querySelector("#newKnowledgeProfile");
 const saveKnowledgeProfile = document.querySelector("#saveKnowledgeProfile");
 const exportKnowledgeProfile = document.querySelector("#exportKnowledgeProfile");
@@ -31,30 +34,6 @@ const qualityReport = document.querySelector("#qualityReport");
 const qualityMeta = document.querySelector("#qualityMeta");
 
 let sourceObjectUrl = null;
-const knowledgeStorageKey = "pdfTranslateKnowledgeProfiles";
-const defaultKnowledgeProfiles = {
-  "学术论文": knowledgeBase.value,
-  "技术文档": `术语：
-API = API
-SDK = SDK
-latency = 延迟
-throughput = 吞吐量
-deployment = 部署
-
-风格：
-使用准确、简洁的技术中文。保留命令、代码、配置项、接口名和错误信息原文。
-不要扩写原文没有的操作步骤。`,
-  "商务合同": `术语：
-party = 一方
-agreement = 协议
-liability = 责任
-confidentiality = 保密
-termination = 终止
-
-风格：
-使用正式、稳健的法律/商务中文。保持条款编号、金额、日期和主体名称完全一致。
-不要弱化义务、限制、免责或条件。`,
-};
 
 [baseUrl, model, apiKey].forEach((input) => {
   input.addEventListener("input", () => {
@@ -70,54 +49,43 @@ refreshJobHistory();
 refreshJobs.addEventListener("click", refreshJobHistory);
 
 knowledgeProfile.addEventListener("change", () => {
-  const profiles = loadKnowledgeProfiles();
-  const name = knowledgeProfile.value;
-  knowledgeProfileName.value = name;
-  knowledgeBase.value = profiles[name] || "";
+  loadProfileIntoEditor(knowledgeProfile.value);
+});
+
+addGlossaryRow.addEventListener("click", () => {
+  appendGlossaryRow({ src: "", dst: "", note: "", case_sensitive: false });
 });
 
 newKnowledgeProfile.addEventListener("click", () => {
-  const baseName = "我的知识库";
-  const profiles = loadKnowledgeProfiles();
-  let name = baseName;
-  let index = 2;
-  while (profiles[name]) {
-    name = `${baseName} ${index}`;
-    index += 1;
-  }
-  knowledgeProfileName.value = name;
-  knowledgeBase.value = `术语：
-source term = 目标译法
-
-风格：
-写清楚你希望这类文档怎么翻译。
-
-禁译：
-品牌名、产品名、代码、变量、公式和引用不要擅自翻译。`;
+  knowledgeProfileName.value = uniqueProfileName("我的知识库");
+  renderGlossary([{ src: "", dst: "", note: "", case_sensitive: false }]);
+  styleRules.value = "写清楚你希望这类文档怎么翻译。";
+  doNotTranslate.value = "品牌名、产品名、代码、变量、公式、引用";
   setStatus("已创建空白知识库草稿，编辑后点击保存。");
 });
 
-saveKnowledgeProfile.addEventListener("click", () => {
+saveKnowledgeProfile.addEventListener("click", async () => {
   const name = knowledgeProfileName.value.trim();
   if (!name) {
     setStatus("请输入知识库配置名称。", true);
     return;
   }
-  const profiles = loadKnowledgeProfiles();
-  profiles[name] = knowledgeBase.value.trim();
-  saveKnowledgeProfiles(profiles);
-  renderKnowledgeProfiles(name);
-  setStatus(`知识库“${name}”已保存。`);
+  try {
+    await fetch(`/api/knowledge/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readEditorProfile(name)),
+    }).then(assertOk);
+    await refreshKnowledgeProfiles(name);
+    setStatus(`知识库“${name}”已保存。`);
+  } catch (error) {
+    setStatus(error.message || "知识库保存失败。", true);
+  }
 });
 
 exportKnowledgeProfile.addEventListener("click", () => {
   const name = knowledgeProfileName.value.trim() || knowledgeProfile.value || "translation-knowledge";
-  const payload = {
-    name,
-    content: knowledgeBase.value,
-    exported_at: new Date().toISOString(),
-    version: 1,
-  };
+  const payload = { ...readEditorProfile(name), exported_at: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -134,16 +102,16 @@ importKnowledgeProfile.addEventListener("change", async () => {
   }
   try {
     const payload = JSON.parse(await file.text());
-    const name = String(payload.name || file.name.replace(/\.knowledge\.json$|\.json$/i, "") || "导入知识库").trim();
-    const content = String(payload.content || payload.knowledge_base || "");
-    if (!content.trim()) {
-      throw new Error("导入文件里没有知识库内容。");
-    }
-    const profiles = loadKnowledgeProfiles();
-    profiles[name] = content;
-    saveKnowledgeProfiles(profiles);
-    renderKnowledgeProfiles(name);
-    setStatus(`知识库“${name}”已导入。`);
+    payload.name = String(
+      payload.name || file.name.replace(/\.knowledge\.json$|\.json$/i, "") || "导入知识库",
+    ).trim();
+    const saved = await fetch("/api/knowledge/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(assertOk);
+    await refreshKnowledgeProfiles(saved.name);
+    setStatus(`知识库“${saved.name}”已导入。`);
   } catch (error) {
     setStatus(error.message || "知识库导入失败。", true);
   } finally {
@@ -151,20 +119,18 @@ importKnowledgeProfile.addEventListener("change", async () => {
   }
 });
 
-deleteKnowledgeProfile.addEventListener("click", () => {
+deleteKnowledgeProfile.addEventListener("click", async () => {
   const name = knowledgeProfile.value;
-  const profiles = loadKnowledgeProfiles();
-  if (!name || !profiles[name]) {
+  if (!name) {
     return;
   }
-  delete profiles[name];
-  saveKnowledgeProfiles(profiles);
-  const nextName = Object.keys(profiles)[0] || "学术论文";
-  if (!Object.keys(profiles).length) {
-    saveKnowledgeProfiles({ "学术论文": defaultKnowledgeProfiles["学术论文"] });
+  try {
+    await fetch(`/api/knowledge/${encodeURIComponent(name)}`, { method: "DELETE" }).then(assertOk);
+    await refreshKnowledgeProfiles();
+    setStatus(`知识库“${name}”已删除。`);
+  } catch (error) {
+    setStatus(error.message || "知识库删除失败。", true);
   }
-  renderKnowledgeProfiles(nextName);
-  setStatus(`知识库“${name}”已删除。`);
 });
 
 pdfFile.addEventListener("change", () => {
@@ -213,7 +179,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("api_key", apiKey.value.trim());
   formData.append("preserve_toc", preserveToc.checked ? "true" : "false");
   formData.append("protected_pages", protectedPages.value.trim());
-  formData.append("knowledge_base", knowledgeBase.value.trim());
+  formData.append("knowledge_name", knowledgeProfile.value || "");
 
   translateButton.disabled = true;
   const statusText = provider.value === "mock"
@@ -285,7 +251,9 @@ async function pollJob(statusUrl, downloadUrl, previewUrl, sourceUrl) {
         ? ` · 质检提示 ${warnings.map((item) => item.page).join(", ")} 页`
         : "";
       const pageBridges = job.stats.page_bridges ? ` · 跨页上下文 ${job.stats.page_bridges} 处` : "";
-      const knowledge = job.stats.knowledge_base_applied ? " · 已用知识库" : "";
+      const knowledge = job.stats.knowledge_base_applied
+        ? ` · 知识库命中 ${job.stats.glossary_hits ?? 0} 术语`
+        : "";
       translatedMeta.textContent = `${job.stats.pages} 页 · ${job.stats.engine || "pdf2zh"}${preserved}${fallback}${pageBridges}${knowledge}${warningText}`;
       downloadLink.href = downloadUrl;
       downloadLink.classList.remove("is-disabled");
@@ -401,46 +369,121 @@ async function renderQualityReport(jobId) {
   }
 }
 
-function initializeKnowledgeProfiles() {
-  const profiles = loadKnowledgeProfiles();
-  if (!Object.keys(profiles).length) {
-    saveKnowledgeProfiles(defaultKnowledgeProfiles);
-    renderKnowledgeProfiles("学术论文");
-    return;
-  }
-  renderKnowledgeProfiles(Object.keys(profiles)[0]);
+let knowledgeNames = [];
+
+async function initializeKnowledgeProfiles() {
+  await refreshKnowledgeProfiles();
 }
 
-function loadKnowledgeProfiles() {
+async function assertOk(response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || "请求失败");
+  }
+  return data;
+}
+
+async function refreshKnowledgeProfiles(preferredName) {
+  let profiles = [];
   try {
-    const raw = localStorage.getItem(knowledgeStorageKey);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
+    const data = await assertOk(await fetch(`/api/knowledge?t=${Date.now()}`));
+    profiles = data.profiles || [];
+  } catch (error) {
+    setStatus(error.message || "知识库加载失败。", true);
   }
-}
-
-function saveKnowledgeProfiles(profiles) {
-  localStorage.setItem(knowledgeStorageKey, JSON.stringify(profiles));
-}
-
-function renderKnowledgeProfiles(selectedName) {
-  const profiles = loadKnowledgeProfiles();
+  knowledgeNames = profiles.map((item) => item.name);
   knowledgeProfile.innerHTML = "";
-  for (const name of Object.keys(profiles)) {
+  for (const item of profiles) {
     const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
+    option.value = item.name;
+    option.textContent = `${item.name}（${item.glossary_count || 0} 术语）`;
     knowledgeProfile.append(option);
   }
-  const actualName = profiles[selectedName] ? selectedName : Object.keys(profiles)[0];
-  knowledgeProfile.value = actualName || "";
-  knowledgeProfileName.value = actualName || "";
-  knowledgeBase.value = actualName ? profiles[actualName] : "";
+  const target = knowledgeNames.includes(preferredName) ? preferredName : knowledgeNames[0];
+  if (target) {
+    knowledgeProfile.value = target;
+    await loadProfileIntoEditor(target);
+  } else {
+    knowledgeProfileName.value = "";
+    renderGlossary([]);
+    styleRules.value = "";
+    doNotTranslate.value = "";
+  }
+}
+
+async function loadProfileIntoEditor(name) {
+  if (!name) {
+    return;
+  }
+  try {
+    const profile = await assertOk(await fetch(`/api/knowledge/${encodeURIComponent(name)}?t=${Date.now()}`));
+    knowledgeProfileName.value = profile.name || name;
+    renderGlossary(profile.glossary || []);
+    styleRules.value = (profile.style_rules || []).join("\n");
+    doNotTranslate.value = (profile.do_not_translate || []).join("、");
+  } catch (error) {
+    setStatus(error.message || "知识库读取失败。", true);
+  }
+}
+
+function renderGlossary(entries) {
+  glossaryBody.innerHTML = "";
+  if (!entries.length) {
+    appendGlossaryRow({ src: "", dst: "", note: "", case_sensitive: false });
+    return;
+  }
+  for (const entry of entries) {
+    appendGlossaryRow(entry);
+  }
+}
+
+function appendGlossaryRow(entry) {
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input class="g-src" type="text" value="${escapeAttr(entry.src)}" placeholder="source term" /></td>
+    <td><input class="g-dst" type="text" value="${escapeAttr(entry.dst)}" placeholder="目标译法" /></td>
+    <td><input class="g-note" type="text" value="${escapeAttr(entry.note)}" placeholder="备注（可选）" /></td>
+    <td class="cell-center"><input class="g-cs" type="checkbox" ${entry.case_sensitive ? "checked" : ""} /></td>
+    <td class="cell-center"><button class="g-del btn btn-ghost btn-sm" type="button" title="删除">✕</button></td>
+  `;
+  row.querySelector(".g-del").addEventListener("click", () => row.remove());
+  glossaryBody.append(row);
+}
+
+function readEditorProfile(name) {
+  const glossary = [];
+  for (const row of glossaryBody.querySelectorAll("tr")) {
+    const src = row.querySelector(".g-src").value.trim();
+    if (!src) {
+      continue;
+    }
+    glossary.push({
+      src,
+      dst: row.querySelector(".g-dst").value.trim(),
+      note: row.querySelector(".g-note").value.trim(),
+      case_sensitive: row.querySelector(".g-cs").checked,
+    });
+  }
+  return {
+    name,
+    glossary,
+    style_rules: styleRules.value.split("\n").map((s) => s.trim()).filter(Boolean),
+    do_not_translate: doNotTranslate.value.split(/[、,，\n]/).map((s) => s.trim()).filter(Boolean),
+  };
+}
+
+function uniqueProfileName(base) {
+  let name = base;
+  let index = 2;
+  while (knowledgeNames.includes(name)) {
+    name = `${base} ${index}`;
+    index += 1;
+  }
+  return name;
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
 }
 
 function sanitizeFileName(value) {
@@ -475,3 +518,59 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+/* ============ 视图导航 ============ */
+const viewMeta = {
+  workspace: { title: "翻译工作台", hint: "上传 PDF，选择语言与服务商，左右对照预览译文。" },
+  knowledge: { title: "知识库", hint: "维护术语、风格与禁译规则，翻译时按优先级注入提示词。" },
+  jobs: { title: "任务与质检", hint: "查看历史任务、占位符/乱码扫描与异常页回退情况。" },
+  settings: { title: "接入设置", hint: "配置翻译服务商、密钥、版式引擎与质量模式。" },
+  help: { title: "帮助", hint: "快速上手与能力路线图。" },
+};
+const navItems = document.querySelectorAll(".nav-item");
+const views = document.querySelectorAll(".view");
+const viewTitle = document.querySelector("#viewTitle");
+const viewHint = document.querySelector("#viewHint");
+
+function switchView(name) {
+  if (!viewMeta[name]) {
+    return;
+  }
+  navItems.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.view === name));
+  views.forEach((view) => view.classList.toggle("is-active", view.dataset.panel === name));
+  viewTitle.textContent = viewMeta[name].title;
+  viewHint.textContent = viewMeta[name].hint;
+}
+
+navItems.forEach((btn) => {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+});
+document.querySelectorAll("[data-view]:not(.nav-item)").forEach((el) => {
+  el.addEventListener("click", (event) => {
+    event.preventDefault();
+    switchView(el.dataset.view);
+  });
+});
+
+/* ============ 连接状态指示 ============ */
+const connDot = document.querySelector("#connDot");
+const connText = document.querySelector("#connText");
+
+function refreshConnState() {
+  const isMock = provider.value === "mock";
+  const hasKey = Boolean(apiKey.value.trim());
+  if (isMock) {
+    connDot.classList.remove("is-live");
+    connText.textContent = "Mock 版式测试";
+  } else if (hasKey) {
+    connDot.classList.add("is-live");
+    connText.textContent = `${model.value.trim() || "已配置"} · 已连接`;
+  } else {
+    connDot.classList.remove("is-live");
+    connText.textContent = "未配置 API Key";
+  }
+}
+
+[provider, apiKey, model].forEach((el) => el.addEventListener("input", refreshConnState));
+provider.addEventListener("change", refreshConnState);
+refreshConnState();

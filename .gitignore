@@ -4,6 +4,7 @@ storage/uploads/*
 storage/outputs/*
 storage/work/*
 storage/jobs/*
+storage/knowledge/*
 storage/cache/*
 storage/pdf2zh-home/*
 storage/*.log

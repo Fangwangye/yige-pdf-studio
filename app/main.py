@@ -13,12 +13,14 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import knowledge
 from .pdf2zh_engine import (
     Pdf2zhConfig,
     Pdf2zhError,
     copy_pdf_without_translation,
     translate_with_pdf2zh,
 )
+from fastapi import Body
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -48,6 +50,7 @@ async def translate_pdf(
     preserve_toc: bool = Form(True),
     protected_pages: str | None = Form(None),
     knowledge_base: str | None = Form(None),
+    knowledge_name: str | None = Form(None),
 ) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -62,6 +65,7 @@ async def translate_pdf(
     with input_path.open("wb") as target:
         shutil.copyfileobj(file.file, target)
 
+    knowledge_profile = knowledge.load_profile(knowledge_name) if knowledge_name else None
     config = Pdf2zhConfig(
         source_language=normalize_language_code(source_language, fallback="en"),
         target_language=normalize_language_code(target_language, fallback="zh"),
@@ -73,6 +77,7 @@ async def translate_pdf(
         preserve_toc=preserve_toc,
         protected_pages=parse_page_list(protected_pages),
         knowledge_base=knowledge_base,
+        knowledge_profile=knowledge_profile,
     )
     _write_job_status(
         job_id,
@@ -98,7 +103,10 @@ async def translate_pdf(
                 "quality_mode": quality_mode,
                 "preserve_toc": preserve_toc,
                 "protected_pages": protected_pages or "",
-                "knowledge_base_applied": bool(knowledge_base and knowledge_base.strip()),
+                "knowledge_name": (knowledge_profile or {}).get("name") if knowledge_profile else None,
+                "knowledge_base_applied": bool(
+                    knowledge_profile or (knowledge_base and knowledge_base.strip())
+                ),
             },
             "stats": None,
             "error": None,
@@ -194,6 +202,40 @@ def _pdf_response(job_id: str, inline: bool) -> FileResponse:
         filename=f"translated-{job_id}.pdf",
         content_disposition_type="inline" if inline else "attachment",
     )
+
+
+@app.get("/api/knowledge")
+def list_knowledge() -> dict[str, object]:
+    return {"profiles": knowledge.list_profiles()}
+
+
+@app.get("/api/knowledge/{name}")
+def get_knowledge(name: str) -> dict[str, object]:
+    profile = knowledge.load_profile(name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Knowledge profile not found.")
+    return profile
+
+
+@app.put("/api/knowledge/{name}")
+def put_knowledge(name: str, payload: dict = Body(...)) -> dict[str, object]:
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Profile name is required.")
+    return knowledge.save_profile(name, payload)
+
+
+@app.delete("/api/knowledge/{name}")
+def remove_knowledge(name: str) -> dict[str, object]:
+    deleted = knowledge.delete_profile(name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Knowledge profile not found.")
+    return {"deleted": name}
+
+
+@app.post("/api/knowledge/import")
+def import_knowledge(payload: dict = Body(...)) -> dict[str, object]:
+    name = str(payload.get("name") or "导入知识库").strip()
+    return knowledge.save_profile(name, payload)
 
 
 app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
@@ -333,6 +375,8 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
     fallback_pages = stats.get("fallback_pages") if isinstance(stats, dict) and isinstance(stats.get("fallback_pages"), list) else []
     preserved_pages = stats.get("preserved_pages") if isinstance(stats, dict) and isinstance(stats.get("preserved_pages"), list) else []
     knowledge_applied = bool(stats.get("knowledge_base_applied") or settings.get("knowledge_base_applied"))
+    glossary_hits = stats.get("glossary_hits") if isinstance(stats.get("glossary_hits"), int) else 0
+    knowledge_name = settings.get("knowledge_name")
     checks = [
         {
             "name": "页面生成",
@@ -357,7 +401,11 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
         {
             "name": "知识库",
             "status": "pass" if knowledge_applied else "idle",
-            "detail": "已选择用户知识库" if knowledge_applied else "未应用",
+            "detail": (
+                f"{knowledge_name or '用户知识库'} · 命中术语 {glossary_hits} 个"
+                if knowledge_applied
+                else "未应用"
+            ),
         },
     ]
     return {

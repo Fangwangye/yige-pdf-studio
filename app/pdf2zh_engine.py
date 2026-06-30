@@ -12,6 +12,8 @@ from typing import Callable
 
 import fitz
 
+from .knowledge import render_profile
+
 
 @dataclass(frozen=True)
 class Pdf2zhConfig:
@@ -26,6 +28,7 @@ class Pdf2zhConfig:
     protected_pages: tuple[int, ...] = ()
     prompt: str | None = None
     knowledge_base: str | None = None
+    knowledge_profile: dict | None = None
 
 
 class Pdf2zhError(RuntimeError):
@@ -123,13 +126,14 @@ def _translate_with_pdf2zh_sync(
             "--ignore-cache",
         ]
     document_context = build_document_context(input_path, config.target_language)
+    knowledge_text, glossary_hits = _resolve_knowledge(config, document_context)
     prompt_path = write_prompt_file(
         work_dir,
         config.prompt
         or default_translation_prompt(
             config.target_language,
             document_context,
-            normalize_knowledge_base(config.knowledge_base),
+            knowledge_text,
         ),
     )
     if prompt_path:
@@ -184,7 +188,8 @@ def _translate_with_pdf2zh_sync(
         "quality_warnings": quality_warnings,
         "context_terms": document_context["terms"],
         "page_bridges": len(document_context["page_bridges"]),
-        "knowledge_base_applied": bool(normalize_knowledge_base(config.knowledge_base)),
+        "knowledge_base_applied": bool(knowledge_text),
+        "glossary_hits": glossary_hits,
         "log_tail": _tail(process_output),
     }
 
@@ -295,7 +300,21 @@ def build_document_context(input_path: Path, target_language: str) -> dict[str, 
         "terms": terms,
         "page_bridges": page_bridges,
         "target_language": target_language,
+        "full_text": full_text,
     }
+
+
+def _resolve_knowledge(
+    config: "Pdf2zhConfig", document_context: dict[str, object]
+) -> tuple[str, int]:
+    """决定本次翻译注入的知识库文本与命中术语数。
+
+    优先使用结构化知识库（按文档命中过滤术语）；否则回退旧版纯文本。
+    """
+    if config.knowledge_profile:
+        document_text = str(document_context.get("full_text") or "")
+        return render_profile(config.knowledge_profile, document_text)
+    return normalize_knowledge_base(config.knowledge_base), 0
 
 
 def _extract_title(text: str) -> str:
