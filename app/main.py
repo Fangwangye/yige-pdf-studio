@@ -207,6 +207,50 @@ def preview_source_pdf(job_id: str) -> FileResponse:
     )
 
 
+def _delete_job_files(job_id: str) -> bool:
+    """删除某任务的状态、上传、输出与工作目录，返回是否删到东西。"""
+    found = False
+    for path in (JOB_DIR / f"{job_id}.json", UPLOAD_DIR / f"{job_id}.pdf", OUTPUT_DIR / f"{job_id}.pdf"):
+        if path.exists():
+            found = True
+            try:
+                path.unlink()
+            except OSError:
+                pass
+    work = WORK_DIR / job_id
+    if work.exists():
+        found = True
+        shutil.rmtree(work, ignore_errors=True)
+    return found
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict[str, object]:
+    _validate_job_id(job_id)
+    if not _delete_job_files(job_id):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"deleted": job_id}
+
+
+@app.delete("/api/jobs")
+def clear_jobs(state: str | None = None) -> dict[str, object]:
+    """清空任务；传 state=failed 只清失败任务。"""
+    JOB_DIR.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for path in list(JOB_DIR.glob("*.json")):
+        job_id = path.stem
+        if state:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if data.get("state") != state:
+                continue
+        if _delete_job_files(job_id):
+            count += 1
+    return {"deleted": count}
+
+
 def _pdf_response(job_id: str, inline: bool) -> FileResponse:
     _validate_job_id(job_id)
 

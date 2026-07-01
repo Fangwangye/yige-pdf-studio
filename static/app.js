@@ -52,6 +52,8 @@ initializeKnowledgeProfiles();
 refreshJobHistory();
 
 refreshJobs.addEventListener("click", refreshJobHistory);
+document.querySelector("#clearAllJobs").addEventListener("click", () => clearJobs());
+document.querySelector("#clearFailedJobs").addEventListener("click", () => clearJobs("failed"));
 
 knowledgeProfile.addEventListener("change", () => {
   loadProfileIntoEditor(knowledgeProfile.value);
@@ -322,21 +324,47 @@ function renderJobHistory(jobs) {
   }
   jobHistory.innerHTML = "";
   for (const job of jobs) {
-    const item = document.createElement("button");
-    item.type = "button";
+    const item = document.createElement("div");
     item.className = `job-item state-${job.state || "unknown"}`;
     item.innerHTML = `
-      <span class="job-title">${escapeHtml(job.source_filename || job.job_id)}</span>
-      <span class="job-subtitle">${escapeHtml(formatJobSubtitle(job))}</span>
+      <button type="button" class="job-main">
+        <span class="job-title">${escapeHtml(job.source_filename || job.job_id)}</span>
+        <span class="job-subtitle">${escapeHtml(formatJobSubtitle(job))}</span>
+      </button>
+      <button type="button" class="job-del" title="删除此任务">✕</button>
     `;
-    item.addEventListener("click", async () => {
+    item.querySelector(".job-main").addEventListener("click", async () => {
       const statusResponse = await fetch(`${job.status_url}?t=${Date.now()}`);
       const fullJob = await statusResponse.json();
       loadJobPreview(fullJob, fullJob.preview_url, fullJob.source_url);
       await renderQualityReport(fullJob.job_id);
       setStatus(`已载入历史任务：${fullJob.source_filename || fullJob.job_id}`);
     });
+    item.querySelector(".job-del").addEventListener("click", async () => {
+      try {
+        await fetch(`/api/jobs/${job.job_id}`, { method: "DELETE" }).then(assertOk);
+        await refreshJobHistory();
+        setStatus(`已删除任务：${job.source_filename || job.job_id}`);
+      } catch (error) {
+        setStatus(error.message || "删除失败。", true);
+      }
+    });
     jobHistory.append(item);
+  }
+}
+
+async function clearJobs(state) {
+  const label = state === "failed" ? "失败任务" : "全部历史任务";
+  if (!window.confirm(`确定要清除${label}吗？此操作不可恢复。`)) {
+    return;
+  }
+  try {
+    const query = state ? `?state=${state}` : "";
+    const data = await fetch(`/api/jobs${query}`, { method: "DELETE" }).then(assertOk);
+    await refreshJobHistory();
+    setStatus(`已清除 ${data.deleted ?? 0} 个任务。`);
+  } catch (error) {
+    setStatus(error.message || "清除失败。", true);
   }
 }
 
