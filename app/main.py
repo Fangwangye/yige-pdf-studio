@@ -326,6 +326,56 @@ def export_knowledge_csv(name: str) -> PlainTextResponse:
     return PlainTextResponse(knowledge.profile_to_csv(profile), media_type="text/csv")
 
 
+@app.post("/api/knowledge/import-tbx")
+def import_knowledge_tbx(payload: dict = Body(...)) -> dict[str, object]:
+    name = str(payload.get("name") or "导入术语").strip()
+    glossary = knowledge.tbx_to_glossary(str(payload.get("tbx") or ""))
+    if not glossary:
+        raise HTTPException(status_code=400, detail="TBX 未解析到任何术语。")
+    existing = knowledge.load_profile(name) or {}
+    data = {
+        "name": name,
+        "glossary": knowledge.merge_glossary(existing.get("glossary") or [], glossary),
+        "style_rules": existing.get("style_rules") or [],
+        "do_not_translate": existing.get("do_not_translate") or [],
+        "tm": existing.get("tm") or [],
+    }
+    return {**knowledge.save_profile(name, data), "imported": len(glossary)}
+
+
+@app.get("/api/knowledge/{name}/export.tbx")
+def export_knowledge_tbx(name: str) -> PlainTextResponse:
+    profile = knowledge.load_profile(name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Knowledge profile not found.")
+    return PlainTextResponse(knowledge.glossary_to_tbx(profile), media_type="application/xml")
+
+
+@app.post("/api/knowledge/import-tmx")
+def import_knowledge_tmx(payload: dict = Body(...)) -> dict[str, object]:
+    name = str(payload.get("name") or "导入记忆").strip()
+    tm = knowledge.tmx_to_tm(str(payload.get("tmx") or ""))
+    if not tm:
+        raise HTTPException(status_code=400, detail="TMX 未解析到任何句对。")
+    existing = knowledge.load_profile(name) or {}
+    data = {
+        "name": name,
+        "glossary": existing.get("glossary") or [],
+        "style_rules": existing.get("style_rules") or [],
+        "do_not_translate": existing.get("do_not_translate") or [],
+        "tm": knowledge.merge_tm(existing.get("tm") or [], tm),
+    }
+    return {**knowledge.save_profile(name, data), "imported": len(tm)}
+
+
+@app.get("/api/knowledge/{name}/export.tmx")
+def export_knowledge_tmx(name: str) -> PlainTextResponse:
+    profile = knowledge.load_profile(name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Knowledge profile not found.")
+    return PlainTextResponse(knowledge.tm_to_tmx(profile), media_type="application/xml")
+
+
 app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
 
 

@@ -113,27 +113,63 @@ exportCsvProfile.addEventListener("click", () => {
   window.open(`/api/knowledge/${encodeURIComponent(name)}/export.csv`, "_blank");
 });
 
-importCsvProfile.addEventListener("change", async () => {
-  const file = importCsvProfile.files?.[0];
+async function importKnowledgeFile(input, { endpoint, field, unit, stripExt }) {
+  const file = input.files?.[0];
   if (!file) {
     return;
   }
   try {
-    const csv = await file.text();
-    const name = knowledgeProfileName.value.trim() || file.name.replace(/\.csv$/i, "") || "导入术语";
-    const saved = await fetch("/api/knowledge/import-csv", {
+    const content = await file.text();
+    const name = knowledgeProfileName.value.trim() || file.name.replace(stripExt, "") || "导入";
+    const saved = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, csv }),
+      body: JSON.stringify({ name, [field]: content }),
     }).then(assertOk);
     await refreshKnowledgeProfiles(saved.name);
-    setStatus(`已从 CSV 导入 ${saved.imported ?? 0} 条术语到“${saved.name}”。`);
+    setStatus(`已导入 ${saved.imported ?? 0} ${unit}到“${saved.name}”。`);
   } catch (error) {
-    setStatus(error.message || "CSV 导入失败。", true);
+    setStatus(error.message || "导入失败。", true);
   } finally {
-    importCsvProfile.value = "";
+    input.value = "";
   }
-});
+}
+
+function exportKnowledge(kind, ext) {
+  const name = knowledgeProfile.value || knowledgeProfileName.value.trim();
+  if (!name) {
+    setStatus("请先选择一个知识库。", true);
+    return;
+  }
+  window.open(`/api/knowledge/${encodeURIComponent(name)}/export.${ext}`, "_blank");
+}
+
+importCsvProfile.addEventListener("change", () =>
+  importKnowledgeFile(importCsvProfile, {
+    endpoint: "/api/knowledge/import-csv",
+    field: "csv",
+    unit: "条术语",
+    stripExt: /\.csv$/i,
+  }),
+);
+document.querySelector("#importTbxProfile").addEventListener("change", (e) =>
+  importKnowledgeFile(e.target, {
+    endpoint: "/api/knowledge/import-tbx",
+    field: "tbx",
+    unit: "条术语",
+    stripExt: /\.(tbx|xml)$/i,
+  }),
+);
+document.querySelector("#importTmxProfile").addEventListener("change", (e) =>
+  importKnowledgeFile(e.target, {
+    endpoint: "/api/knowledge/import-tmx",
+    field: "tmx",
+    unit: "条翻译记忆",
+    stripExt: /\.(tmx|xml)$/i,
+  }),
+);
+document.querySelector("#exportTbxProfile").addEventListener("click", () => exportKnowledge("tbx", "tbx"));
+document.querySelector("#exportTmxProfile").addEventListener("click", () => exportKnowledge("tmx", "tmx"));
 
 importKnowledgeProfile.addEventListener("change", async () => {
   const file = importKnowledgeProfile.files?.[0];

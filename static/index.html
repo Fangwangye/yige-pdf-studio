@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260701-protermbase2" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-tbxtmx" />
   </head>
   <body>
     <div class="layout">
@@ -136,7 +136,7 @@
             <div class="card">
               <div class="card-head">
                 <h2>知识库配置</h2>
-                <p class="card-desc">术语对照、风格规则与禁译表，会在翻译时按优先级注入提示词。可保存多套、导入导出。</p>
+                <p class="card-desc">术语对照（含领域/状态）、风格规则、禁译表与翻译记忆(TM)，翻译时按优先级注入提示词。支持 JSON / CSV / TBX / TMX 导入导出，可对接 Trados / OmegaT 等 CAT 工具。</p>
               </div>
               <div class="knowledge-toolbar">
                 <label class="field">
@@ -155,6 +155,16 @@
                   <span>导入 CSV</span>
                   <input id="importCsvProfile" type="file" accept=".csv,text/csv" />
                 </label>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 TBX</span>
+                  <input id="importTbxProfile" type="file" accept=".tbx,.xml,application/xml,text/xml" />
+                </label>
+                <button id="exportTbxProfile" class="btn btn-ghost" type="button">导出 TBX</button>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 TMX</span>
+                  <input id="importTmxProfile" type="file" accept=".tmx,.xml,application/xml,text/xml" />
+                </label>
+                <button id="exportTmxProfile" class="btn btn-ghost" type="button">导出 TMX</button>
                 <button id="deleteKnowledgeProfile" class="btn btn-ghost btn-danger-ghost" type="button">删除</button>
               </div>
               <div class="kb-section">
@@ -380,6 +390,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260701-protermbase2" defer></script>
+    <script src="/app.js?v=20260701-tbxtmx" defer></script>
   </body>
 </html>

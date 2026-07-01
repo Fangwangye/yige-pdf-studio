@@ -10,8 +10,10 @@ import io
 import json
 import re
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 KNOWLEDGE_DIR = BASE_DIR / "storage" / "knowledge"
@@ -200,8 +202,20 @@ def normalize_profile(payload: dict[str, object], name: str | None = None) -> di
         "glossary": glossary,
         "style_rules": style_rules,
         "do_not_translate": do_not_translate,
+        "tm": normalize_tm(payload.get("tm")),
         "updated_at": _now(),
     }
+
+
+def merge_tm(
+    base: list[dict[str, object]], incoming: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    by_key: dict[str, dict[str, object]] = {}
+    for pair in normalize_tm(base):
+        by_key[str(pair.get("src", "")).lower()] = pair
+    for pair in normalize_tm(incoming):
+        by_key[str(pair.get("src", "")).lower()] = pair
+    return list(by_key.values())
 
 
 def parse_legacy_text(content: str) -> dict[str, object]:
@@ -386,6 +400,19 @@ def render_profile(
     if do_not_translate:
         blocks.append("禁译（保留原文）:\n" + "、".join(str(x) for x in do_not_translate))
 
+    # 翻译记忆：注入原文出现在本文档中的历史句对，供参考保持一致
+    tm = profile.get("tm") or []
+    if tm:
+        if document_text is not None:
+            lowered = document_text.lower()
+            tm = [p for p in tm if str(p.get("src") or "").lower() in lowered]
+        tm = tm[:30]
+        if tm:
+            tm_lines = ["翻译记忆（历史译法，供参考以保持一致）:"]
+            for pair in tm:
+                tm_lines.append(f"- {pair.get('src')} => {pair.get('dst')}")
+            blocks.append("\n".join(tm_lines))
+
     text = "\n\n".join(blocks).strip()
     if len(text) > PROMPT_BUDGET:
         text = text[:PROMPT_BUDGET].rstrip() + "\n[Knowledge base truncated to fit prompt budget.]"
@@ -413,6 +440,142 @@ def profile_to_csv(profile: dict[str, object]) -> str:
     for entry in profile.get("glossary") or []:
         writer.writerow([entry.get(field, "") for field in CSV_FIELDS])
     return out.getvalue()
+
+
+# --------------------------------------------------------------------------- #
+# TBX（术语库）/ TMX（翻译记忆）导入导出
+# --------------------------------------------------------------------------- #
+def _localname(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def _lang_of(element: ET.Element) -> str:
+    for key, value in element.attrib.items():
+        if key.rsplit("}", 1)[-1].lower() == "lang":
+            return value
+    for child in element:
+        if _localname(child.tag) == "language":
+            for key, value in child.attrib.items():
+                if key.rsplit("}", 1)[-1].lower() == "lang":
+                    return value
+    return ""
+
+
+def _first_term_text(element: ET.Element) -> str:
+    for node in element.iter():
+        if _localname(node.tag) == "term" and (node.text or "").strip():
+            return node.text.strip()
+    return ""
+
+
+def _pick_lang(bucket: dict[str, str], want: str) -> str:
+    for lang, term in bucket.items():
+        if lang.lower().startswith(want.lower()):
+            return term
+    return ""
+
+
+def _iter_pairs_from_groups(root: ET.Element, group_names: set[str], src_lang: str, dst_lang: str):
+    for entry in root.iter():
+        if _localname(entry.tag) not in group_names:
+            continue
+        bucket: dict[str, str] = {}
+        for sub in entry:
+            if _localname(sub.tag) in ("langset", "languagegrp", "tuv"):
+                lang = _lang_of(sub)
+                term = _first_term_text(sub) or _seg_text(sub)
+                if lang and term and lang not in bucket:
+                    bucket[lang] = term
+        src = _pick_lang(bucket, src_lang)
+        dst = _pick_lang(bucket, dst_lang)
+        if src and dst:
+            yield {"src": src, "dst": dst}
+
+
+def _seg_text(element: ET.Element) -> str:
+    for node in element.iter():
+        if _localname(node.tag) == "seg" and (node.text or "").strip():
+            return node.text.strip()
+    return ""
+
+
+def tbx_to_glossary(xml_text: str, src_lang: str = "en", dst_lang: str = "zh") -> list[dict[str, object]]:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    pairs = list(_iter_pairs_from_groups(root, {"termentry", "conceptgrp"}, src_lang, dst_lang))
+    return normalize_glossary(pairs)
+
+
+def glossary_to_tbx(profile: dict[str, object], src_lang: str = "en", dst_lang: str = "zh") -> str:
+    rows = []
+    for i, entry in enumerate(profile.get("glossary") or [], start=1):
+        src = _xml_escape(str(entry.get("src") or ""))
+        dst = _xml_escape(str(entry.get("dst") or ""))
+        if not src:
+            continue
+        rows.append(
+            f'    <termEntry id="t{i}">\n'
+            f'      <langSet xml:lang="{src_lang}"><tig><term>{src}</term></tig></langSet>\n'
+            f'      <langSet xml:lang="{dst_lang}"><tig><term>{dst}</term></tig></langSet>\n'
+            f"    </termEntry>"
+        )
+    body = "\n".join(rows)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<martif type="TBX-Basic" xml:lang="en">\n  <text>\n    <body>\n'
+        f"{body}\n"
+        "    </body>\n  </text>\n</martif>\n"
+    )
+
+
+def tmx_to_tm(xml_text: str, src_lang: str = "en", dst_lang: str = "zh") -> list[dict[str, object]]:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    return normalize_tm(list(_iter_pairs_from_groups(root, {"tu"}, src_lang, dst_lang)))
+
+
+def tm_to_tmx(profile: dict[str, object], src_lang: str = "en", dst_lang: str = "zh") -> str:
+    rows = []
+    for pair in profile.get("tm") or []:
+        src = _xml_escape(str(pair.get("src") or ""))
+        dst = _xml_escape(str(pair.get("dst") or ""))
+        if not src:
+            continue
+        rows.append(
+            "    <tu>\n"
+            f'      <tuv xml:lang="{src_lang}"><seg>{src}</seg></tuv>\n'
+            f'      <tuv xml:lang="{dst_lang}"><seg>{dst}</seg></tuv>\n'
+            "    </tu>"
+        )
+    body = "\n".join(rows)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<tmx version="1.4">\n  <header creationtool="yige-pdf-studio" srclang="en" '
+        'datatype="plaintext" segtype="sentence"/>\n  <body>\n'
+        f"{body}\n"
+        "  </body>\n</tmx>\n"
+    )
+
+
+def normalize_tm(raw: object) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    if not isinstance(raw, list):
+        return out
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        src = _clean_str(item.get("src"), 1000)
+        dst = _clean_str(item.get("dst"), 1000)
+        if not src or src.lower() in seen:
+            continue
+        seen.add(src.lower())
+        out.append({"src": src, "dst": dst})
+    return out
 
 
 def merge_glossary(
