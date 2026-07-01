@@ -12,6 +12,7 @@ from typing import Callable
 
 import fitz
 
+from . import sections as doc_sections
 from .knowledge import render_profile
 
 
@@ -31,6 +32,8 @@ class Pdf2zhConfig:
     knowledge_base: str | None = None
     knowledge_profile: dict | None = None
     knowledge_source: str = "local"  # "local" | "mcp"
+    document_type: str = ""
+    keep_sections: tuple[str, ...] = ()
 
 
 class Pdf2zhError(RuntimeError):
@@ -145,6 +148,10 @@ def _translate_with_pdf2zh_sync(
         knowledge_text, glossary_hits, knowledge_source = _resolve_knowledge(
             config, document_context, log_callback=log_callback
         )
+        inpage_keep = doc_sections.inpage_keep_labels(set(config.keep_sections))
+        if inpage_keep:
+            keep_line = "保留原文、不要翻译以下内容：" + "、".join(inpage_keep) + "。"
+            knowledge_text = f"{knowledge_text}\n\n{keep_line}".strip() if knowledge_text else keep_line
         prompt_path = write_prompt_file(
             work_dir,
             config.prompt
@@ -190,11 +197,20 @@ def _translate_with_pdf2zh_sync(
         except Exception as exc:
             fallback_error = str(exc)
 
+    section_keep_pages, section_keep_detail = doc_sections.detect_keep_pages(
+        document_context.get("all_page_texts") or [], set(config.keep_sections)
+    )
+    if section_keep_pages and log_callback:
+        log_callback(
+            "按段落保留原文页："
+            + "；".join(f"{label} {pgs[0]}-{pgs[-1]}" for label, pgs in section_keep_detail.items())
+        )
+    protected_all = tuple(sorted(set(config.protected_pages) | section_keep_pages))
     preserved_pages = preserve_pages(
         input_path,
         output_path,
         auto_toc=config.preserve_toc,
-        protected_pages=config.protected_pages,
+        protected_pages=protected_all,
     )
     quality_warnings = scan_pdf_quality(output_path)
     return {
@@ -209,6 +225,8 @@ def _translate_with_pdf2zh_sync(
         "knowledge_base_applied": bool(knowledge_text),
         "glossary_hits": glossary_hits,
         "knowledge_source": knowledge_source,
+        "document_type": config.document_type,
+        "kept_sections": section_keep_detail,
         "log_tail": _tail(process_output),
     }
 
@@ -320,6 +338,7 @@ def build_document_context(input_path: Path, target_language: str) -> dict[str, 
         "page_bridges": page_bridges,
         "target_language": target_language,
         "full_text": full_text,
+        "all_page_texts": all_page_texts,
     }
 
 

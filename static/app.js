@@ -4,12 +4,15 @@ const targetLanguage = document.querySelector("#targetLanguage");
 const provider = document.querySelector("#provider");
 const layoutEngine = document.querySelector("#layoutEngine");
 const qualityMode = document.querySelector("#qualityMode");
+const threadCount = document.querySelector("#threadCount");
 const baseUrl = document.querySelector("#baseUrl");
 const model = document.querySelector("#model");
 const apiKey = document.querySelector("#apiKey");
 const preserveToc = document.querySelector("#preserveToc");
 const protectedPages = document.querySelector("#protectedPages");
 const knowledgeSource = document.querySelector("#knowledgeSource");
+const documentType = document.querySelector("#documentType");
+const sectionList = document.querySelector("#sectionList");
 const knowledgeProfile = document.querySelector("#knowledgeProfile");
 const knowledgeProfileName = document.querySelector("#knowledgeProfileName");
 const glossaryBody = document.querySelector("#glossaryBody");
@@ -173,6 +176,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("provider", provider.value);
   formData.append("layout_engine", layoutEngine.value);
   formData.append("quality_mode", qualityMode.value);
+  formData.append("thread_count", threadCount.value.trim() || "0");
   formData.append("source_language", sourceLanguage.value.trim() || "en");
   formData.append("target_language", targetLanguage.value.trim() || "zh");
   formData.append("base_url", baseUrl.value.trim());
@@ -182,6 +186,8 @@ translateButton.addEventListener("click", async () => {
   formData.append("protected_pages", protectedPages.value.trim());
   formData.append("knowledge_name", knowledgeProfile.value || "");
   formData.append("knowledge_source", knowledgeSource.value || "local");
+  formData.append("document_type", documentType.value || "");
+  formData.append("keep_sections", collectKeepSections());
 
   translateButton.disabled = true;
   const statusText = {
@@ -559,6 +565,97 @@ document.querySelectorAll("[data-view]:not(.nav-item)").forEach((el) => {
     event.preventDefault();
     switchView(el.dataset.view);
   });
+});
+
+/* ============ 文档类型与分段翻译 ============ */
+// key 需与后端 app/sections.py 的 SECTION_CATALOG 一致
+const SECTION_PRESETS = {
+  academic: {
+    knowledge: "学术论文",
+    sections: [
+      { key: "references", label: "参考文献", kind: "page", keep: true },
+      { key: "appendix", label: "附录", kind: "page", keep: false },
+      { key: "toc", label: "目录", kind: "page", keep: true },
+      { key: "formula_code", label: "公式/代码块", kind: "inpage", keep: true },
+      { key: "abstract", label: "摘要", kind: "inpage", keep: false },
+      { key: "authors", label: "作者信息", kind: "inpage", keep: false },
+    ],
+  },
+  technical: {
+    knowledge: "技术文档",
+    sections: [
+      { key: "toc", label: "目录", kind: "page", keep: true },
+      { key: "appendix", label: "附录", kind: "page", keep: false },
+      { key: "code", label: "代码/命令块", kind: "inpage", keep: true },
+    ],
+  },
+  contract: {
+    knowledge: "商务合同",
+    sections: [
+      { key: "signature", label: "签字/盖章页", kind: "page", keep: true },
+      { key: "numbers", label: "条款编号/金额/日期", kind: "inpage", keep: true },
+    ],
+  },
+  general: {
+    knowledge: "",
+    sections: [
+      { key: "toc", label: "目录", kind: "page", keep: true },
+      { key: "cover", label: "封面", kind: "page", keep: false },
+    ],
+  },
+};
+
+function renderSectionList(type) {
+  sectionList.innerHTML = "";
+  const preset = SECTION_PRESETS[type];
+  if (!preset) {
+    return;
+  }
+  for (const sec of preset.sections) {
+    const row = document.createElement("label");
+    row.className = "section-row";
+    const kindTag = sec.kind === "page" ? "整页保留·自动检测" : "同页·仅LLM禁译";
+    row.innerHTML = `
+      <input type="checkbox" class="section-keep" data-key="${sec.key}" ${sec.keep ? "checked" : ""} />
+      <span class="section-name">${escapeHtml(sec.label)}</span>
+      <span class="section-kind kind-${sec.kind}">${kindTag}</span>
+    `;
+    sectionList.append(row);
+  }
+}
+
+function collectKeepSections() {
+  return Array.from(sectionList.querySelectorAll(".section-keep"))
+    .filter((box) => box.checked)
+    .map((box) => box.dataset.key)
+    .join(",");
+}
+
+documentType.addEventListener("change", () => {
+  const preset = SECTION_PRESETS[documentType.value];
+  renderSectionList(documentType.value);
+  // 自动套用对应知识库（若存在）
+  if (preset && preset.knowledge && knowledgeNames.includes(preset.knowledge)) {
+    knowledgeProfile.value = preset.knowledge;
+    loadProfileIntoEditor(preset.knowledge);
+  }
+});
+
+/* ============ 预览放大 ============ */
+document.querySelectorAll(".pane-zoom").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const pane = btn.closest(".preview-pane");
+    const wasMax = pane.classList.contains("is-max");
+    document.querySelectorAll(".preview-pane.is-max").forEach((p) => p.classList.remove("is-max"));
+    if (!wasMax) {
+      pane.classList.add("is-max");
+    }
+  });
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    document.querySelectorAll(".preview-pane.is-max").forEach((p) => p.classList.remove("is-max"));
+  }
 });
 
 /* ============ 连接状态指示 ============ */

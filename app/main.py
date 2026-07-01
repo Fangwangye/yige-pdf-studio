@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import knowledge
+from . import sections as doc_sections
 from .pdf2zh_engine import (
     Pdf2zhConfig,
     Pdf2zhError,
@@ -47,11 +48,14 @@ async def translate_pdf(
     model: str | None = Form(None),
     layout_engine: str = Form("babeldoc"),
     quality_mode: str = Form("quality"),
+    thread_count: int = Form(0),
     preserve_toc: bool = Form(True),
     protected_pages: str | None = Form(None),
     knowledge_base: str | None = Form(None),
     knowledge_name: str | None = Form(None),
     knowledge_source: str = Form("local"),
+    document_type: str = Form(""),
+    keep_sections: str | None = Form(None),
 ) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -74,13 +78,15 @@ async def translate_pdf(
         api_key=api_key,
         base_url=base_url,
         model=model,
-        thread_count=thread_count_for_quality_mode(quality_mode),
+        thread_count=resolve_thread_count(quality_mode, thread_count),
         use_babeldoc=layout_engine != "legacy",
         preserve_toc=preserve_toc,
         protected_pages=parse_page_list(protected_pages),
         knowledge_base=knowledge_base,
         knowledge_profile=knowledge_profile,
         knowledge_source="mcp" if knowledge_source == "mcp" else "local",
+        document_type=document_type or "",
+        keep_sections=doc_sections.normalize_keep_sections(keep_sections),
     )
     _write_job_status(
         job_id,
@@ -104,10 +110,13 @@ async def translate_pdf(
                 "base_url": base_url,
                 "layout_engine": layout_engine,
                 "quality_mode": quality_mode,
+                "thread_count": resolve_thread_count(quality_mode, thread_count),
                 "preserve_toc": preserve_toc,
                 "protected_pages": protected_pages or "",
                 "knowledge_name": (knowledge_profile or {}).get("name") if knowledge_profile else None,
                 "knowledge_source": "mcp" if knowledge_source == "mcp" else "local",
+                "document_type": document_type or "",
+                "keep_sections": list(doc_sections.normalize_keep_sections(keep_sections)),
                 "knowledge_base_applied": bool(
                     knowledge_profile or (knowledge_base and knowledge_base.strip())
                 ),
@@ -388,6 +397,14 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
         "local": "本地知识库",
         "legacy": "旧版文本",
     }.get(str(source_used), "本地知识库")
+    kept_sections = stats.get("kept_sections") if isinstance(stats.get("kept_sections"), dict) else {}
+    doc_type_raw = stats.get("document_type") or settings.get("document_type") or ""
+    doc_type_label = {
+        "academic": "学术论文",
+        "technical": "技术文档",
+        "contract": "商务合同",
+        "general": "通用",
+    }.get(str(doc_type_raw), "")
     checks = [
         {
             "name": "页面生成",
@@ -418,6 +435,18 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
                 else "未应用"
             ),
         },
+        {
+            "name": "分段保留",
+            "status": "pass" if kept_sections else "idle",
+            "detail": (
+                (f"{doc_type_label}：" if doc_type_label else "")
+                + "；".join(
+                    f"{label} {pgs[0]}-{pgs[-1]} 页" for label, pgs in kept_sections.items() if pgs
+                )
+                if kept_sections
+                else (f"{doc_type_label} · 全文翻译" if doc_type_label else "未设置")
+            ),
+        },
     ]
     return {
         "job_id": data.get("job_id"),
@@ -435,11 +464,17 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
 
 def thread_count_for_quality_mode(value: str | None) -> int:
     mapping = {
-        "quality": 1,
-        "balanced": 2,
-        "fast": 4,
+        "quality": 4,
+        "balanced": 8,
+        "fast": 16,
     }
-    return mapping.get((value or "quality").strip().lower(), 1)
+    return mapping.get((value or "quality").strip().lower(), 4)
+
+
+def resolve_thread_count(quality_mode: str | None, override: int) -> int:
+    """显式并发优先；否则按质量模式取默认。范围钳制到 1..32。"""
+    count = override if override and override > 0 else thread_count_for_quality_mode(quality_mode)
+    return max(1, min(count, 32))
 
 
 def normalize_language_code(value: str | None, fallback: str) -> str:

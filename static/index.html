@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260630-argos" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-zoom-speed" />
   </head>
   <body>
     <div class="layout">
@@ -84,7 +84,10 @@
               <article class="preview-pane">
                 <div class="pane-header">
                   <h2>待翻译 PDF</h2>
-                  <span id="sourceMeta">未选择</span>
+                  <div class="pane-actions">
+                    <span id="sourceMeta">未选择</span>
+                    <button class="pane-zoom" type="button" title="放大 / 还原">⛶</button>
+                  </div>
                 </div>
                 <iframe id="sourcePreview" title="待翻译 PDF 预览"></iframe>
               </article>
@@ -92,7 +95,10 @@
               <article class="preview-pane">
                 <div class="pane-header">
                   <h2>翻译后 PDF</h2>
-                  <span id="translatedMeta">未生成</span>
+                  <div class="pane-actions">
+                    <span id="translatedMeta">未生成</span>
+                    <button class="pane-zoom" type="button" title="放大 / 还原">⛶</button>
+                  </div>
                 </div>
                 <iframe id="translatedPreview" title="翻译后 PDF 预览"></iframe>
               </article>
@@ -222,10 +228,14 @@
                   <label class="field">
                     <span>质量模式</span>
                     <select id="qualityMode">
-                      <option value="quality" selected>质量优先</option>
-                      <option value="balanced">均衡</option>
-                      <option value="fast">速度优先</option>
+                      <option value="quality" selected>质量优先（4 线程）</option>
+                      <option value="balanced">均衡（8 线程）</option>
+                      <option value="fast">速度优先（16 线程）</option>
                     </select>
+                  </label>
+                  <label class="field">
+                    <span>并发线程 <em class="field-note">（留空按模式；越大越快，注意 API 限流）</em></span>
+                    <input id="threadCount" type="number" min="1" max="32" placeholder="按模式默认" autocomplete="off" />
                   </label>
                   <label class="field">
                     <span>保留页码</span>
@@ -246,6 +256,26 @@
                 <p class="card-desc">MCP 检索会连接内置术语 Server 实时检索术语；不可用时自动回退本地知识库（详见 <a href="#" data-view="help">路线图</a>）。</p>
               </article>
             </div>
+
+            <article class="card">
+              <div class="card-head">
+                <h2>文档结构与分段翻译</h2>
+                <p class="card-desc">选文档类型自动套用对应知识库，并按段落勾选「保留原文（不翻译）」。整页型段落（目录/参考文献/附录）自动检测页码保留；同页型（摘要/公式/代码）走提示词禁译，尽力而为。</p>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>文档类型</span>
+                  <select id="documentType">
+                    <option value="">不指定</option>
+                    <option value="academic">学术论文</option>
+                    <option value="technical">技术文档</option>
+                    <option value="contract">商务合同</option>
+                    <option value="general">通用</option>
+                  </select>
+                </label>
+              </div>
+              <div id="sectionList" class="section-list"></div>
+            </article>
           </section>
 
           <!-- ===== 视图：帮助 ===== -->
@@ -289,6 +319,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260630-argos" defer></script>
+    <script src="/app.js?v=20260630-zoom-speed" defer></script>
   </body>
 </html>
