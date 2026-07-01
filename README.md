@@ -4,10 +4,15 @@
 
 ## 功能
 
-- 左右双栏 PDF 预览：原文 PDF 与译文 PDF 同屏对照。
-- OpenAI-compatible API：支持 DeepSeek、OpenAI-compatible 网关等模型服务。
-- BabelDOC/pdf2zh 版式重建：尽量保留图片、表格、公式和页面布局。
-- 翻译知识库：可在浏览器中创建、保存、导入、导出术语和风格规则。
+- 左右双栏 PDF 预览：原文 PDF 与译文 PDF 同屏对照，单栏可一键放大（⛶ / Esc 还原）。
+- 对照模式：基于 pdf.js 的双栏视图，支持左右**同步滚动**（可关闭改为各自独立滚动）。
+- 多翻译后端：OpenAI-compatible 网关（DeepSeek 等）、Argos 离线翻译（开源 NMT，无需 Key）、Mock 版式测试。
+- BabelDOC/pdf2zh 版式重建：尽量保留图片、表格、公式和页面布局；默认关闭 BabelDOC 的推广水印。
+- 文档类型与分段翻译：按类型（学术论文/技术文档/合同/通用）勾选「保留原文」的段落——整页型（目录/参考文献/附录）自动检测页码保留，同页型（摘要/公式/代码）走提示词禁译。
+- 并发可调：质量/均衡/速度模式（4/8/16 线程）或直接指定并发线程数（1–32），显著提升长文档速度。
+- 结构化翻译知识库：术语对照表 + 风格规则 + 禁译表，存服务端、可保存多套、导入导出；翻译时按文档命中过滤术语再注入提示词。
+- MCP 术语检索（可选）：内置术语 MCP Server，翻译前实时检索术语；不可用时自动回退本地知识库。在「接入设置 → 知识来源」切换。
+- Claude Skill：`.claude/skills/translate-pdf/` 把整条翻译流水线封装成可被 Claude Code 调度的 skill。
 - 文档级上下文：自动抽取标题、摘要和高频术语，注入翻译提示词。
 - 跨页连续性：自动识别页尾到下一页页首的断句上下文，减少长文逻辑断裂。
 - 质量检查：扫描未解析占位符、乱码样字符和替换字符。
@@ -57,28 +62,41 @@ https://api.example.com/v1
 
 没有 API Key 时可以选择 `Mock 版式测试`，它不会翻译，只复制原 PDF 到右侧，验证界面流程。
 
-## 知识库格式
+## 知识库
 
-知识库是纯文本规则，前端会保存在浏览器 `localStorage`，也可以导出为 JSON。推荐格式：
+知识库为结构化数据，存服务端 `storage/knowledge/{name}.json`（空目录首次访问自动种子默认配置），结构：
 
-```text
-术语：
-large language model = 大语言模型
-scaling law = 缩放定律
-pre-training = 预训练
-
-风格：
-使用正式、流畅的学术中文。不要逐词硬翻，保持论文语气。
-
-禁译：
-模型名、数据集名、方法名、代码、公式和引用保留原文。
+```jsonc
+{
+  "name": "计算机与AI",
+  "glossary": [
+    { "src": "large language model", "dst": "大语言模型",
+      "domain": "AI", "pos": "", "definition": "",
+      "status": "preferred", "case_sensitive": false, "note": "" }
+  ],
+  "style_rules": ["使用准确、简洁的技术中文"],
+  "do_not_translate": ["代码", "命令", "公式"]
+}
 ```
 
-后端会将知识库和自动抽取的文档上下文合并进 prompt。知识库优先级高于自动上下文，但不会覆盖占位符、公式、引用保护规则。
+- 每条术语支持**专业字段**：`domain`（领域）、`pos`（词性）、`definition`（定义）、`status`（`preferred` 推荐 / `forbidden` 禁译 / `deprecated` 弃用）。`status=forbidden` 的术语会自动作为「保留原文」注入。
+- 前端在「知识库」视图用术语表格（原文/译文/领域/状态/备注/大小写）+ 风格/禁译编辑，CRUD 走 `/api/knowledge*`。
+- **翻译记忆（TM）**：知识库可存历史句对（`tm`），翻译时把原文出现在文档中的句对作为「参考译法」注入，保持跨文档一致。
+- **标准格式互通**：CSV / **TBX**（术语库）/ **TMX**（翻译记忆）导入导出，可对接 SDL Trados、OmegaT 等专业 CAT 工具。
+  - CSV：`POST /api/knowledge/import-csv`、`GET /api/knowledge/{name}/export.csv`，列名兼容中英，无表头时按 `原文,译文,领域,备注`。
+  - TBX：`import-tbx` / `export.tbx`，兼容 TBX-Basic 与微软 conceptGrp 结构。
+  - TMX：`import-tmx` / `export.tmx`（1.4）。
+- 内置一套原创的 **`计算机与AI`** 领域种子术语库（自建，无第三方版权）。其它开源术语库（如机器之心 AI 术语库 CC BY-NC-SA、微软 Terminology）请自行按各自许可证用 CSV/TBX 导入。
+- 翻译时只把**实际出现在文档**中的术语注入提示词，命中数见质检报告（`stats.glossary_hits`）。
+- 导入兼容旧版 `{name, content}` 纯文本（自动解析「术语/风格/禁译」段落）。
+- 知识库优先级高于自动抽取的文档上下文，但不覆盖占位符、公式、引用保护规则。
+
+详见 [docs/模块说明/知识库设计.md](docs/模块说明/知识库设计.md) 与 [docs/接入规范/HTTP-API.md](docs/接入规范/HTTP-API.md)。
 
 ## 当前限制
 
 - `pdf2zh` 首次运行会初始化模型、字体和缓存，可能比较慢。
 - 输出质量主要取决于 PDF 复杂度和翻译模型；PDF 天然不是结构化编辑格式，无法对所有文件承诺 100% 完全一致。
+- **跨页/跨栏衔接**：保版式模式下，双栏论文中一段跨栏或跨页的文字会被切块分别翻译，视觉上可能出现断裂或页眉重渲染——这是 BabelDOC 保版式路线的固有限制，暂无法根治（「改善页衔接」实验开关仅能减少段内碎片，不解决跨栏跨页）。
 - 扫描版 PDF 需要 OCR 路径；后续可继续接 BabelDOC/OCR workaround 配置。
-- 默认以质量优先，翻译线程数为 1，速度会比并发翻译慢。
+- 并发线程越大越快，但可能触发翻译服务商的限流；默认质量模式为 4 线程，可在「接入设置」调整。

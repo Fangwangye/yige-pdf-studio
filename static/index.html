@@ -4,164 +4,396 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260630-product-workflow" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-kbswitch" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Yige PDF Studio</p>
-          <h1>译格 PDF 工作台</h1>
+    <div class="layout">
+      <!-- ============ 左侧导航 ============ -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">译</div>
+          <div class="brand-text">
+            <p class="brand-name">译格 PDF Studio</p>
+            <p class="brand-sub">本地 PDF 翻译工作台</p>
+          </div>
         </div>
-        <a class="download-link is-disabled" id="downloadLink" href="#" download>下载译文 PDF</a>
-      </header>
 
-      <section class="control-band" aria-label="翻译设置">
-        <label class="file-picker">
-          <span>选择 PDF</span>
-          <input id="pdfFile" type="file" accept="application/pdf" />
-        </label>
+        <nav class="nav" aria-label="主导航">
+          <button class="nav-item is-active" type="button" data-view="workspace">
+            <span class="nav-ico">▦</span><span>翻译工作台</span>
+          </button>
+          <button class="nav-item" type="button" data-view="knowledge">
+            <span class="nav-ico">▤</span><span>知识库</span>
+          </button>
+          <button class="nav-item" type="button" data-view="jobs">
+            <span class="nav-ico">◷</span><span>任务与质检</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <span class="nav-ico">⚙</span><span>接入设置</span>
+          </button>
+          <button class="nav-item" type="button" data-view="help">
+            <span class="nav-ico">?</span><span>帮助</span>
+          </button>
+        </nav>
 
-        <label>
-          <span>源语言</span>
-          <input id="sourceLanguage" type="text" value="en" autocomplete="off" />
-        </label>
-
-        <label>
-          <span>目标语言</span>
-          <input id="targetLanguage" type="text" value="zh" autocomplete="off" />
-        </label>
-
-        <label>
-          <span>服务商</span>
-          <select id="provider">
-            <option value="openai_compatible" selected>DeepSeek / OpenAI-compatible</option>
-            <option value="mock">Mock 版式测试</option>
-          </select>
-        </label>
-
-        <label>
-          <span>版式引擎</span>
-          <select id="layoutEngine">
-            <option value="babeldoc" selected>BabelDOC</option>
-            <option value="legacy">pdf2zh legacy</option>
-          </select>
-        </label>
-
-        <label>
-          <span>质量模式</span>
-          <select id="qualityMode">
-            <option value="quality" selected>质量优先</option>
-            <option value="balanced">均衡</option>
-            <option value="fast">速度优先</option>
-          </select>
-        </label>
-
-        <label>
-          <span>Base URL</span>
-          <input id="baseUrl" type="url" value="https://api.deepseek.com/v1" placeholder="https://api.example.com/v1" />
-        </label>
-
-        <label>
-          <span>模型</span>
-          <input id="model" type="text" value="deepseek-v4-pro" placeholder="deepseek-v4-pro" autocomplete="off" />
-        </label>
-
-        <label>
-          <span>API Key</span>
-          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
-        </label>
-
-        <label class="toggle-field">
-          <input id="preserveToc" type="checkbox" checked />
-          <span>保留目录页</span>
-        </label>
-
-        <label>
-          <span>保留页码</span>
-          <input id="protectedPages" type="text" placeholder="2,4-5" autocomplete="off" />
-        </label>
-
-        <button id="translateButton" type="button">开始翻译</button>
-      </section>
-
-      <section class="knowledge-band" aria-label="翻译知识库">
-        <div class="knowledge-header">
-          <label>
-            <span>知识库配置</span>
-            <select id="knowledgeProfile"></select>
-          </label>
-          <label>
-            <span>配置名称</span>
-            <input id="knowledgeProfileName" type="text" value="学术论文" autocomplete="off" />
-          </label>
-          <button id="newKnowledgeProfile" class="secondary-button" type="button">新建</button>
-          <button id="saveKnowledgeProfile" type="button">保存知识库</button>
-          <button id="exportKnowledgeProfile" class="secondary-button" type="button">导出</button>
-          <label class="file-action">
-            <span>导入</span>
-            <input id="importKnowledgeProfile" type="file" accept="application/json" />
-          </label>
-          <button id="deleteKnowledgeProfile" class="secondary-button" type="button">删除</button>
+        <div class="sidebar-foot">
+          <span class="dot" id="connDot"></span>
+          <span id="connText">Mock / 未配置 API</span>
         </div>
-        <label class="knowledge-editor">
-          <span>术语、风格、禁译和偏好规则</span>
-          <textarea id="knowledgeBase" spellcheck="false">术语：
-large language model = 大语言模型
-scaling law = 缩放定律
-pre-training = 预训练
-fine-tuning = 微调
-alignment = 对齐
+      </aside>
 
-风格：
-使用正式、流畅的学术中文。不要逐词硬翻，保持论文语气。
-模型名、数据集名、方法名和引用保留英文原文。
-首次出现的重要英文术语可采用“中文译名（English Term）”。</textarea>
-        </label>
-      </section>
-
-      <section class="status-line" id="statusLine">等待上传 PDF。</section>
-
-      <section class="operations-grid" aria-label="任务与质检">
-        <article class="ops-card">
-          <div class="ops-header">
-            <h2>任务历史</h2>
-            <button id="refreshJobs" class="secondary-button" type="button">刷新</button>
+      <!-- ============ 右侧工作区 ============ -->
+      <main class="workspace">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1 id="viewTitle">翻译工作台</h1>
+            <p id="viewHint">上传 PDF，选择语言与服务商，左右对照预览译文。</p>
           </div>
-          <div id="jobHistory" class="job-history"></div>
-        </article>
-
-        <article class="ops-card">
-          <div class="ops-header">
-            <h2>质量报告</h2>
-            <span id="qualityMeta">暂无任务</span>
+          <div class="topbar-actions">
+            <a class="btn btn-ghost pane-link is-disabled" id="openPreviewLink" href="#" target="_blank" rel="noreferrer">打开译文</a>
+            <a class="btn btn-primary is-disabled" id="downloadLink" href="#" download>下载译文 PDF</a>
           </div>
-          <div id="qualityReport" class="quality-report"></div>
-        </article>
-      </section>
+        </header>
 
-      <section class="preview-grid" aria-label="PDF 预览">
-        <article class="preview-pane">
-          <div class="pane-header">
-            <h2>待翻译 PDF</h2>
-            <span id="sourceMeta">未选择</span>
-          </div>
-          <iframe id="sourcePreview" title="待翻译 PDF 预览"></iframe>
-        </article>
-
-        <article class="preview-pane">
-          <div class="pane-header">
-            <h2>翻译后 PDF</h2>
-            <div class="pane-actions">
-              <a id="openPreviewLink" class="pane-link is-disabled" href="#" target="_blank" rel="noreferrer">打开预览</a>
-              <span id="translatedMeta">未生成</span>
+        <div class="view-scroll">
+          <!-- ===== 视图：翻译工作台 ===== -->
+          <section class="view is-active" data-panel="workspace">
+            <div class="quickbar">
+              <label class="field file-picker">
+                <span>选择 PDF</span>
+                <input id="pdfFile" type="file" accept="application/pdf" />
+              </label>
+              <label class="field">
+                <span>源语言</span>
+                <input id="sourceLanguage" type="text" value="en" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>目标语言</span>
+                <input id="targetLanguage" type="text" value="zh" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>知识库</span>
+                <select id="knowledgeProfile"></select>
+              </label>
+              <button id="translateButton" class="btn btn-primary translate-btn" type="button">开始翻译</button>
             </div>
-          </div>
-          <iframe id="translatedPreview" title="翻译后 PDF 预览"></iframe>
-        </article>
-      </section>
-    </main>
 
-    <script src="/app.js?v=20260630-product-workflow" defer></script>
+            <section class="status-line" id="statusLine">等待上传 PDF。</section>
+
+            <div class="compare-bar">
+              <button id="compareToggle" class="btn btn-ghost btn-sm" type="button">对照模式</button>
+              <label class="compare-sync" id="syncWrap" hidden>
+                <input id="syncScroll" type="checkbox" checked />
+                <span>同步滚动</span>
+              </label>
+              <span class="compare-hint" id="compareHint" hidden>pdf.js 渲染 · 关闭同步则各自独立滚动</span>
+            </div>
+
+            <div class="preview-grid">
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>待翻译 PDF</h2>
+                  <div class="pane-actions">
+                    <span id="sourceMeta">未选择</span>
+                    <button class="pane-zoom" type="button" title="放大 / 还原">⛶</button>
+                  </div>
+                </div>
+                <iframe id="sourcePreview" title="待翻译 PDF 预览"></iframe>
+              </article>
+
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>翻译后 PDF</h2>
+                  <div class="pane-actions">
+                    <span id="translatedMeta">未生成</span>
+                    <button class="pane-zoom" type="button" title="放大 / 还原">⛶</button>
+                  </div>
+                </div>
+                <iframe id="translatedPreview" title="翻译后 PDF 预览"></iframe>
+              </article>
+            </div>
+
+            <div class="compare-view" id="compareView" hidden>
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>待翻译 PDF</h2>
+                  <span id="cmpSourceMeta" class="muted">对照</span>
+                </div>
+                <div class="compare-scroll" id="cmpSource"></div>
+              </article>
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>翻译后 PDF</h2>
+                  <span id="cmpTransMeta" class="muted">对照</span>
+                </div>
+                <div class="compare-scroll" id="cmpTranslated"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- ===== 视图：知识库 ===== -->
+          <section class="view" data-panel="knowledge">
+            <div class="card">
+              <div class="card-head">
+                <h2>知识库配置</h2>
+                <p class="card-desc">术语对照（含领域/状态）、风格规则、禁译表与翻译记忆(TM)，翻译时按优先级注入提示词。支持 JSON / CSV / TBX / TMX 导入导出，可对接 Trados / OmegaT 等 CAT 工具。</p>
+              </div>
+              <div class="knowledge-toolbar">
+                <label class="field">
+                  <span>切换配置</span>
+                  <select id="kbPicker"></select>
+                </label>
+                <label class="field">
+                  <span>配置名称 <em class="field-note">（改名后点保存另存为新配置）</em></span>
+                  <input id="knowledgeProfileName" type="text" value="学术论文" autocomplete="off" />
+                </label>
+                <button id="newKnowledgeProfile" class="btn btn-ghost" type="button">新建</button>
+                <button id="saveKnowledgeProfile" class="btn btn-primary" type="button">保存</button>
+                <button id="exportKnowledgeProfile" class="btn btn-ghost" type="button">导出 JSON</button>
+                <button id="exportCsvProfile" class="btn btn-ghost" type="button">导出 CSV</button>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 JSON</span>
+                  <input id="importKnowledgeProfile" type="file" accept="application/json" />
+                </label>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 CSV</span>
+                  <input id="importCsvProfile" type="file" accept=".csv,text/csv" />
+                </label>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 TBX</span>
+                  <input id="importTbxProfile" type="file" accept=".tbx,.xml,application/xml,text/xml" />
+                </label>
+                <button id="exportTbxProfile" class="btn btn-ghost" type="button">导出 TBX</button>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 TMX</span>
+                  <input id="importTmxProfile" type="file" accept=".tmx,.xml,application/xml,text/xml" />
+                </label>
+                <button id="exportTmxProfile" class="btn btn-ghost" type="button">导出 TMX</button>
+                <button id="deleteKnowledgeProfile" class="btn btn-ghost btn-danger-ghost" type="button">删除</button>
+              </div>
+              <div class="kb-section">
+                <div class="kb-section-head">
+                  <h3>术语对照表</h3>
+                  <button id="addGlossaryRow" class="btn btn-ghost btn-sm" type="button">+ 添加术语</button>
+                </div>
+                <table class="glossary-table">
+                  <thead>
+                    <tr>
+                      <th class="col-src">原文</th>
+                      <th class="col-dst">译文</th>
+                      <th class="col-domain">领域</th>
+                      <th class="col-status">状态</th>
+                      <th class="col-note">备注</th>
+                      <th class="col-cs">大小写</th>
+                      <th class="col-del"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="glossaryBody"></tbody>
+                </table>
+                <p class="kb-tip">翻译时会扫描文档，只把<strong>实际出现</strong>的术语注入提示词（命中数见质检报告）。</p>
+              </div>
+
+              <div class="kb-section">
+                <h3>风格规则</h3>
+                <textarea id="styleRules" class="kb-textarea" spellcheck="false" placeholder="每行一条，例如：使用正式、流畅的学术中文。"></textarea>
+              </div>
+
+              <div class="kb-section">
+                <h3>禁译（保留原文）</h3>
+                <textarea id="doNotTranslate" class="kb-textarea kb-textarea-sm" spellcheck="false" placeholder="用顿号或逗号分隔，例如：模型名、数据集名、公式、引用"></textarea>
+              </div>
+
+              <p class="hint-row">知识库已存服务端（<code>storage/knowledge/*.json</code>），跨会话保留。MCP 检索见 <a href="#" data-view="help">帮助 → 路线图</a>。</p>
+            </div>
+          </section>
+
+          <!-- ===== 视图：任务与质检 ===== -->
+          <section class="view" data-panel="jobs">
+            <div class="ops-grid">
+              <article class="card">
+                <div class="card-head row">
+                  <h2>任务历史</h2>
+                  <div class="job-actions">
+                    <button id="clearFailedJobs" class="btn btn-ghost btn-sm" type="button">清除失败</button>
+                    <button id="clearAllJobs" class="btn btn-ghost btn-sm btn-danger-ghost" type="button">清空</button>
+                    <button id="refreshJobs" class="btn btn-ghost btn-sm" type="button">刷新</button>
+                  </div>
+                </div>
+                <div id="jobHistory" class="job-history"></div>
+              </article>
+              <article class="card">
+                <div class="card-head row">
+                  <h2>质量报告</h2>
+                  <span id="qualityMeta" class="muted">暂无任务</span>
+                </div>
+                <div id="qualityReport" class="quality-report"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- ===== 视图：接入设置 ===== -->
+          <section class="view" data-panel="settings">
+            <div class="settings-grid">
+              <article class="card">
+                <div class="card-head">
+                  <h2>翻译服务商</h2>
+                  <p class="card-desc">OpenAI-compatible 网关（DeepSeek 等）。无 Key 时可用 Mock 仅复制版式。</p>
+                </div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>服务商</span>
+                    <select id="provider">
+                      <option value="openai_compatible" selected>DeepSeek / OpenAI-compatible</option>
+                      <option value="argos">Argos 离线翻译（开源·无需 Key）</option>
+                      <option value="mock">Mock 版式测试</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Base URL</span>
+                    <input id="baseUrl" type="url" value="https://api.deepseek.com/v1" placeholder="https://api.example.com/v1" />
+                  </label>
+                  <label class="field">
+                    <span>模型</span>
+                    <input id="model" type="text" value="deepseek-v4-pro" placeholder="deepseek-v4-pro" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span>API Key</span>
+                    <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+                  </label>
+                </div>
+              </article>
+
+              <article class="card">
+                <div class="card-head">
+                  <h2>版式与质量</h2>
+                  <p class="card-desc">控制版面重建引擎、翻译并发与目录页保护。</p>
+                </div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>版式引擎</span>
+                    <select id="layoutEngine">
+                      <option value="babeldoc" selected>BabelDOC</option>
+                      <option value="legacy">pdf2zh legacy</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>质量模式</span>
+                    <select id="qualityMode">
+                      <option value="quality" selected>质量优先（4 线程）</option>
+                      <option value="balanced">均衡（8 线程）</option>
+                      <option value="fast">速度优先（16 线程）</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>并发线程 <em class="field-note">（留空按模式；越大越快，注意 API 限流）</em></span>
+                    <input id="threadCount" type="number" min="1" max="32" placeholder="按模式默认" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span>保留页码</span>
+                    <input id="protectedPages" type="text" placeholder="2,4-5" autocomplete="off" />
+                  </label>
+                  <label class="field toggle-field">
+                    <input id="preserveToc" type="checkbox" checked />
+                    <span>保留目录页</span>
+                  </label>
+                  <label class="field toggle-field">
+                    <input id="improvePagebreak" type="checkbox" />
+                    <span>改善页衔接（实验）</span>
+                  </label>
+                  <label class="field">
+                    <span>知识来源</span>
+                    <select id="knowledgeSource">
+                      <option value="local" selected>本地知识库</option>
+                      <option value="mcp">MCP 检索（实验）</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="card-desc">MCP 检索会连接内置术语 Server 实时检索术语；不可用时自动回退本地知识库（详见 <a href="#" data-view="help">路线图</a>）。</p>
+              </article>
+            </div>
+
+            <article class="card">
+              <div class="card-head">
+                <h2>文档结构与分段翻译</h2>
+                <p class="card-desc">选文档类型自动套用对应知识库，并按段落勾选「保留原文（不翻译）」。整页型段落（目录/参考文献/附录）自动检测页码保留；同页型（摘要/公式/代码）走提示词禁译，尽力而为。</p>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>文档类型</span>
+                  <select id="documentType">
+                    <option value="">不指定</option>
+                    <option value="academic">学术论文</option>
+                    <option value="technical">技术文档</option>
+                    <option value="contract">商务合同</option>
+                    <option value="general">通用</option>
+                  </select>
+                </label>
+              </div>
+              <div id="sectionList" class="section-list"></div>
+            </article>
+          </section>
+
+          <!-- ===== 视图：帮助 ===== -->
+          <section class="view" data-panel="help">
+            <div class="card">
+              <div class="card-head">
+                <h2>标准使用流程</h2>
+                <p class="card-desc">第一次用按这五步走，之后重复第 3–5 步即可。</p>
+              </div>
+              <ol class="help-steps">
+                <li><strong>配置服务商</strong>（接入设置）：填 Base URL / 模型 / API Key；没有 Key 想先看效果就选 Argos 离线或 Mock。</li>
+                <li><strong>准备知识库</strong>（知识库）：选或新建一套术语/风格/禁译规则，保存；决定翻译的专业度与一致性。</li>
+                <li><strong>选文档类型 + 分段</strong>（接入设置 → 文档结构）：选类型自动套知识库，勾选要保留原文的段落（目录/参考文献等）。</li>
+                <li><strong>上传并翻译</strong>（翻译工作台）：选 PDF → 设语言 → 开始翻译；长文档把并发线程调到 8–16 更快。</li>
+                <li><strong>对照与质检</strong>：用「对照模式」左右同步核对；到「任务与质检」看占位符/乱码扫描与命中术语数。</li>
+              </ol>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>翻译时发生了什么</h2>
+                <p class="card-desc">了解流程有助于判断在哪一步调优。</p>
+              </div>
+              <div class="flow-line">
+                <span class="flow-step">上传 PDF</span><span class="flow-arrow">→</span>
+                <span class="flow-step">版面解析（BabelDOC）</span><span class="flow-arrow">→</span>
+                <span class="flow-step">抽取文档上下文</span><span class="flow-arrow">→</span>
+                <span class="flow-step">注入知识库/术语</span><span class="flow-arrow">→</span>
+                <span class="flow-step">分块翻译并重排</span><span class="flow-arrow">→</span>
+                <span class="flow-step">质检 / 异常页回退</span><span class="flow-arrow">→</span>
+                <span class="flow-step">生成译文 PDF</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>分场景建议</h2>
+              </div>
+              <ul class="help-tips">
+                <li><strong>学术论文</strong>：文档类型选「学术论文」，勾选保留「参考文献/附录」；术语一致性要求高时用 OpenAI-compatible + 知识库（Argos 不吃术语）。</li>
+                <li><strong>技术文档</strong>：把 API/SDK/命令/配置项放进「禁译」；代码块勾选保留原文。</li>
+                <li><strong>合同</strong>：条款编号/金额/日期加入禁译，风格选正式稳健，逐条核对不要弱化义务。</li>
+                <li><strong>只想快速读懂</strong>：可接受版式一般，优先把并发调大、质量模式选「速度优先」。</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>遇到问题怎么排查</h2>
+              </div>
+              <ul class="help-tips">
+                <li><strong>右侧没出译文</strong> → 到「任务与质检」看任务状态；failed 会显示引擎错误摘要。</li>
+                <li><strong>术语没按知识库翻</strong> → 确认翻译前已选对应知识库；且服务商不是 Argos（NMT 不吃提示词）。</li>
+                <li><strong>太慢</strong> → 接入设置把「并发线程」调到 8–16（注意服务商限流）；首次运行还要下载模型。</li>
+                <li><strong>乱码/占位符</strong> → 质检报告定位到具体页，必要时切 legacy 引擎重试。</li>
+                <li><strong>跨页/跨栏断裂</strong> → 保版式的固有限制；可开「改善页衔接（实验）」缓解段内碎片。</li>
+              </ul>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="/app.js?v=20260701-kbswitch" defer></script>
   </body>
 </html>

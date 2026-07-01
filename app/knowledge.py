@@ -1,0 +1,701 @@
+"""结构化翻译知识库（一期）。
+
+数据模型、服务端存储（storage/knowledge/*.json）、旧纯文本兼容，
+以及把知识库渲染成提示词片段（可按文档命中过滤术语）。
+"""
+from __future__ import annotations
+
+import csv
+import io
+import json
+import re
+import uuid
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
+from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+KNOWLEDGE_DIR = BASE_DIR / "storage" / "knowledge"
+
+SCHEMA_VERSION = 2
+PROMPT_BUDGET = 6000
+
+
+# --------------------------------------------------------------------------- #
+# 默认知识库（首次启动种子）
+# --------------------------------------------------------------------------- #
+DEFAULT_PROFILES: list[dict[str, object]] = [
+    {
+        "name": "学术论文",
+        "glossary": [
+            {"src": "large language model", "dst": "大语言模型", "domain": "学术"},
+            {"src": "scaling law", "dst": "缩放定律", "domain": "学术"},
+            {"src": "pre-training", "dst": "预训练", "domain": "学术"},
+            {"src": "fine-tuning", "dst": "微调", "domain": "学术"},
+            {"src": "alignment", "dst": "对齐", "domain": "学术"},
+            {"src": "ablation study", "dst": "消融实验", "domain": "学术"},
+            {"src": "baseline", "dst": "基线", "domain": "学术"},
+            {"src": "benchmark", "dst": "基准测试", "domain": "学术"},
+            {"src": "state-of-the-art", "dst": "最先进（SOTA）", "domain": "学术"},
+            {"src": "hyperparameter", "dst": "超参数", "domain": "学术"},
+            {"src": "generalization", "dst": "泛化", "domain": "学术"},
+            {"src": "robustness", "dst": "鲁棒性", "domain": "学术"},
+            {"src": "downstream task", "dst": "下游任务", "domain": "学术"},
+            {"src": "zero-shot", "dst": "零样本", "domain": "学术"},
+            {"src": "few-shot", "dst": "少样本", "domain": "学术"},
+            {"src": "in-context learning", "dst": "上下文学习", "domain": "学术"},
+            {"src": "evaluation metric", "dst": "评估指标", "domain": "学术"},
+            {"src": "ground truth", "dst": "真值", "domain": "学术"},
+            {"src": "annotation", "dst": "标注", "domain": "学术"},
+            {"src": "corpus", "dst": "语料库", "domain": "学术"},
+            {"src": "empirical", "dst": "实证的", "domain": "学术"},
+            {"src": "methodology", "dst": "方法论", "domain": "学术"},
+            {"src": "reproducibility", "dst": "可复现性", "domain": "学术"},
+            {"src": "statistically significant", "dst": "统计显著", "domain": "学术"},
+            {"src": "related work", "dst": "相关工作", "domain": "学术"},
+            {"src": "limitation", "dst": "局限性", "domain": "学术"},
+            {"src": "contribution", "dst": "贡献", "domain": "学术"},
+            {"src": "novel", "dst": "新颖的", "domain": "学术"},
+        ],
+        "style_rules": [
+            "使用正式、流畅的学术中文，不要逐词硬翻，保持论文语气。",
+            "模型名、数据集名、方法名和引用保留英文原文。",
+            "首次出现的重要英文术语可采用“中文译名（English Term）”。",
+        ],
+        "do_not_translate": ["模型名", "数据集名", "方法名", "公式", "引用"],
+    },
+    {
+        "name": "技术文档",
+        "glossary": [
+            {"src": "latency", "dst": "延迟", "domain": "系统"},
+            {"src": "throughput", "dst": "吞吐量", "domain": "系统"},
+            {"src": "deployment", "dst": "部署", "domain": "工程"},
+            {"src": "endpoint", "dst": "端点", "domain": "工程"},
+            {"src": "middleware", "dst": "中间件", "domain": "工程"},
+            {"src": "dependency", "dst": "依赖", "domain": "工程"},
+            {"src": "repository", "dst": "仓库", "domain": "工程"},
+            {"src": "rollback", "dst": "回滚", "domain": "运维"},
+            {"src": "rollout", "dst": "灰度发布", "domain": "运维"},
+            {"src": "scalability", "dst": "可扩展性", "domain": "系统"},
+            {"src": "load balancing", "dst": "负载均衡", "domain": "系统"},
+            {"src": "cache", "dst": "缓存", "domain": "系统"},
+            {"src": "concurrency", "dst": "并发", "domain": "系统"},
+            {"src": "authentication", "dst": "认证", "domain": "安全"},
+            {"src": "authorization", "dst": "授权", "domain": "安全"},
+            {"src": "rate limit", "dst": "限流", "domain": "系统"},
+            {"src": "timeout", "dst": "超时", "domain": "系统"},
+            {"src": "payload", "dst": "负载", "domain": "工程"},
+            {"src": "backward compatible", "dst": "向后兼容", "domain": "工程"},
+            {"src": "deprecated", "dst": "已弃用", "domain": "工程"},
+            {"src": "configuration", "dst": "配置", "domain": "工程"},
+            {"src": "environment variable", "dst": "环境变量", "domain": "工程"},
+            {"src": "container", "dst": "容器", "domain": "运维"},
+            {"src": "orchestration", "dst": "编排", "domain": "运维"},
+            {"src": "pipeline", "dst": "流水线", "domain": "工程"},
+            {"src": "idempotent", "dst": "幂等", "domain": "工程"},
+            {"src": "monitoring", "dst": "监控", "domain": "运维"},
+            {"src": "logging", "dst": "日志", "domain": "运维"},
+            {"src": "API", "dst": "API", "domain": "工程", "status": "forbidden"},
+            {"src": "SDK", "dst": "SDK", "domain": "工程", "status": "forbidden"},
+        ],
+        "style_rules": [
+            "使用准确、简洁的技术中文。",
+            "保留命令、代码、配置项、接口名和错误信息原文。",
+            "不要扩写原文没有的操作步骤。",
+        ],
+        "do_not_translate": ["API", "SDK", "命令", "代码", "配置项", "错误信息"],
+    },
+    {
+        "name": "商务合同",
+        "glossary": [
+            {"src": "party", "dst": "缔约方", "domain": "法律"},
+            {"src": "counterparty", "dst": "交易对手", "domain": "法律"},
+            {"src": "agreement", "dst": "协议", "domain": "法律"},
+            {"src": "liability", "dst": "责任", "domain": "法律"},
+            {"src": "confidentiality", "dst": "保密", "domain": "法律"},
+            {"src": "termination", "dst": "终止", "domain": "法律"},
+            {"src": "indemnity", "dst": "赔偿", "domain": "法律"},
+            {"src": "warranty", "dst": "保证", "domain": "法律"},
+            {"src": "breach", "dst": "违约", "domain": "法律"},
+            {"src": "governing law", "dst": "适用法律", "domain": "法律"},
+            {"src": "jurisdiction", "dst": "管辖", "domain": "法律"},
+            {"src": "arbitration", "dst": "仲裁", "domain": "法律"},
+            {"src": "force majeure", "dst": "不可抗力", "domain": "法律"},
+            {"src": "intellectual property", "dst": "知识产权", "domain": "法律"},
+            {"src": "non-disclosure agreement", "dst": "保密协议（NDA）", "domain": "法律"},
+            {"src": "covenant", "dst": "约定", "domain": "法律"},
+            {"src": "provision", "dst": "条款", "domain": "法律"},
+            {"src": "amendment", "dst": "修订", "domain": "法律"},
+            {"src": "effective date", "dst": "生效日", "domain": "法律"},
+            {"src": "expiration", "dst": "到期", "domain": "法律"},
+            {"src": "penalty", "dst": "违约金", "domain": "法律"},
+            {"src": "waiver", "dst": "弃权", "domain": "法律"},
+            {"src": "assignment", "dst": "转让", "domain": "法律"},
+            {"src": "severability", "dst": "可分割性", "domain": "法律"},
+            {"src": "representation", "dst": "陈述", "domain": "法律"},
+            {"src": "obligation", "dst": "义务", "domain": "法律"},
+            {"src": "remedy", "dst": "救济", "domain": "法律"},
+            {"src": "damages", "dst": "损害赔偿", "domain": "法律"},
+            {"src": "hereinafter", "dst": "以下简称", "domain": "法律"},
+        ],
+        "style_rules": [
+            "使用正式、稳健的法律/商务中文。",
+            "保持条款编号、金额、日期和主体名称完全一致。",
+            "不要弱化义务、限制、免责或条件。",
+        ],
+        "do_not_translate": ["条款编号", "金额", "日期", "主体名称"],
+    },
+    {
+        # 原创整理的计算机 / AI 领域术语种子库（自建，无第三方版权）。
+        "name": "计算机与AI",
+        "glossary": [
+            {"src": "large language model", "dst": "大语言模型", "domain": "AI"},
+            {"src": "transformer", "dst": "Transformer", "domain": "AI", "status": "forbidden"},
+            {"src": "attention", "dst": "注意力", "domain": "AI"},
+            {"src": "self-attention", "dst": "自注意力", "domain": "AI"},
+            {"src": "embedding", "dst": "嵌入", "domain": "AI"},
+            {"src": "token", "dst": "词元", "domain": "NLP"},
+            {"src": "tokenizer", "dst": "分词器", "domain": "NLP"},
+            {"src": "fine-tuning", "dst": "微调", "domain": "AI"},
+            {"src": "pre-training", "dst": "预训练", "domain": "AI"},
+            {"src": "inference", "dst": "推理", "domain": "AI"},
+            {"src": "prompt", "dst": "提示词", "domain": "AI"},
+            {"src": "hallucination", "dst": "幻觉", "domain": "AI"},
+            {"src": "reinforcement learning", "dst": "强化学习", "domain": "AI"},
+            {"src": "gradient descent", "dst": "梯度下降", "domain": "ML"},
+            {"src": "overfitting", "dst": "过拟合", "domain": "ML"},
+            {"src": "regularization", "dst": "正则化", "domain": "ML"},
+            {"src": "convolutional neural network", "dst": "卷积神经网络", "domain": "ML"},
+            {"src": "recurrent neural network", "dst": "循环神经网络", "domain": "ML"},
+            {"src": "backpropagation", "dst": "反向传播", "domain": "ML"},
+            {"src": "benchmark", "dst": "基准测试", "domain": "AI"},
+            {"src": "latency", "dst": "延迟", "domain": "系统"},
+            {"src": "throughput", "dst": "吞吐量", "domain": "系统"},
+            {"src": "concurrency", "dst": "并发", "domain": "系统"},
+            {"src": "cache", "dst": "缓存", "domain": "系统"},
+            {"src": "deployment", "dst": "部署", "domain": "工程"},
+            {"src": "pipeline", "dst": "流水线", "domain": "工程"},
+            {"src": "repository", "dst": "仓库", "domain": "工程"},
+            {"src": "dependency", "dst": "依赖", "domain": "工程"},
+            {"src": "middleware", "dst": "中间件", "domain": "工程"},
+            {"src": "endpoint", "dst": "端点", "domain": "工程"},
+            {"src": "load balancing", "dst": "负载均衡", "domain": "系统"},
+            {"src": "scalability", "dst": "可扩展性", "domain": "系统"},
+            {"src": "API", "dst": "API", "domain": "工程", "status": "forbidden"},
+            {"src": "SDK", "dst": "SDK", "domain": "工程", "status": "forbidden"},
+        ],
+        "style_rules": [
+            "使用准确、简洁的技术中文。",
+            "保留命令、代码、配置项、接口名、库名和错误信息原文。",
+            "首次出现的重要英文术语可采用“中文译名（English Term）”。",
+        ],
+        "do_not_translate": ["代码", "命令", "配置项", "接口名", "库名", "公式"],
+    },
+]
+
+
+# --------------------------------------------------------------------------- #
+# 规范化
+# --------------------------------------------------------------------------- #
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _clean_str(value: object, limit: int = 400) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return text[:limit]
+
+
+TERM_STATUSES = ("preferred", "forbidden", "deprecated")
+
+
+def normalize_glossary(raw: object) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    if not isinstance(raw, list):
+        return entries
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        src = _clean_str(item.get("src"), 200)
+        dst = _clean_str(item.get("dst"), 200)
+        if not src:
+            continue
+        status = _clean_str(item.get("status"), 20).lower()
+        if status not in TERM_STATUSES:
+            status = "preferred"
+        entries.append(
+            {
+                "src": src,
+                "dst": dst,
+                "domain": _clean_str(item.get("domain"), 60),
+                "pos": _clean_str(item.get("pos"), 30),
+                "definition": _clean_str(item.get("definition"), 400),
+                "status": status,
+                "case_sensitive": bool(item.get("case_sensitive", False)),
+                "note": _clean_str(item.get("note"), 200),
+            }
+        )
+    return entries
+
+
+def _normalize_str_list(raw: object, limit: int = 60) -> list[str]:
+    if isinstance(raw, str):
+        raw = [line for line in raw.splitlines()]
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        text = _clean_str(item, 400)
+        if text:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def normalize_profile(payload: dict[str, object], name: str | None = None) -> dict[str, object]:
+    """把任意输入（含旧版纯文本）规范成结构化 KnowledgeProfile。"""
+    payload = payload if isinstance(payload, dict) else {}
+    resolved_name = _clean_str(name or payload.get("name"), 120) or "未命名知识库"
+
+    # 旧版纯文本兼容：{name, content} → 解析 术语/风格/禁译 段落
+    if "content" in payload and not payload.get("glossary") and not payload.get("style_rules"):
+        parsed = parse_legacy_text(str(payload.get("content") or ""))
+        glossary = parsed["glossary"]
+        style_rules = parsed["style_rules"]
+        do_not_translate = parsed["do_not_translate"]
+    else:
+        glossary = normalize_glossary(payload.get("glossary"))
+        style_rules = _normalize_str_list(payload.get("style_rules"))
+        do_not_translate = _normalize_str_list(payload.get("do_not_translate"))
+
+    return {
+        "name": resolved_name,
+        "version": SCHEMA_VERSION,
+        "glossary": glossary,
+        "style_rules": style_rules,
+        "do_not_translate": do_not_translate,
+        "tm": normalize_tm(payload.get("tm")),
+        "updated_at": _now(),
+    }
+
+
+def merge_tm(
+    base: list[dict[str, object]], incoming: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    by_key: dict[str, dict[str, object]] = {}
+    for pair in normalize_tm(base):
+        by_key[str(pair.get("src", "")).lower()] = pair
+    for pair in normalize_tm(incoming):
+        by_key[str(pair.get("src", "")).lower()] = pair
+    return list(by_key.values())
+
+
+def parse_legacy_text(content: str) -> dict[str, object]:
+    """尽力把旧版纯文本（术语：/风格：/禁译：）解析成结构化数据。"""
+    glossary: list[dict[str, object]] = []
+    style_rules: list[str] = []
+    do_not_translate: list[str] = []
+    section = "style"  # 默认归入风格
+    for raw_line in content.replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        header = line.rstrip("：:").strip()
+        if header in ("术语", "术语对照", "glossary"):
+            section = "glossary"
+            continue
+        if header in ("风格", "风格规则", "style"):
+            section = "style"
+            continue
+        if header in ("禁译", "禁译表", "do not translate", "保留原文"):
+            section = "dnt"
+            continue
+        if section == "glossary" and ("=" in line or "＝" in line):
+            src, dst = re.split(r"=|＝", line, maxsplit=1)
+            src, dst = src.strip(), dst.strip()
+            if src:
+                glossary.append({"src": src, "dst": dst, "case_sensitive": False, "note": ""})
+        elif section == "dnt":
+            for part in re.split(r"[，,、]", line):
+                part = part.strip()
+                if part:
+                    do_not_translate.append(part)
+        else:
+            style_rules.append(line)
+    return {
+        "glossary": normalize_glossary(glossary),
+        "style_rules": _normalize_str_list(style_rules),
+        "do_not_translate": _normalize_str_list(do_not_translate),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 存储 CRUD
+# --------------------------------------------------------------------------- #
+def _safe_filename(name: str) -> str:
+    slug = re.sub(r'[\\/:*?"<>|]+', "-", name).strip().strip(".")
+    return (slug or "knowledge")[:120]
+
+
+def _profile_path(name: str) -> Path:
+    return KNOWLEDGE_DIR / f"{_safe_filename(name)}.json"
+
+
+def _atomic_write(path: Path, data: dict[str, object]) -> None:
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+    temp = KNOWLEDGE_DIR / f".{uuid.uuid4().hex}.tmp"
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp.replace(path)
+
+
+def ensure_seeded() -> None:
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+    if any(KNOWLEDGE_DIR.glob("*.json")):
+        return
+    for seed in DEFAULT_PROFILES:
+        save_profile(seed["name"], seed)
+
+
+def list_profiles() -> list[dict[str, object]]:
+    ensure_seeded()
+    items: list[dict[str, object]] = []
+    for path in KNOWLEDGE_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        items.append(
+            {
+                "name": data.get("name"),
+                "version": data.get("version"),
+                "glossary_count": len(data.get("glossary") or []),
+                "updated_at": data.get("updated_at"),
+            }
+        )
+    items.sort(key=lambda it: str(it.get("name") or ""))
+    return items
+
+
+def load_profile(name: str) -> dict[str, object] | None:
+    path = _profile_path(name)
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+    # 兜底：按 name 字段扫描
+    for candidate in KNOWLEDGE_DIR.glob("*.json"):
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("name") == name:
+            return data
+    return None
+
+
+def save_profile(name: str, payload: dict[str, object]) -> dict[str, object]:
+    profile = normalize_profile(payload, name=name)
+    _atomic_write(_profile_path(profile["name"]), profile)
+    return profile
+
+
+def delete_profile(name: str) -> bool:
+    path = _profile_path(name)
+    if path.exists():
+        path.unlink()
+        return True
+    for candidate in KNOWLEDGE_DIR.glob("*.json"):
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("name") == name:
+            candidate.unlink()
+            return True
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# 渲染为提示词片段（可按文档命中过滤）
+# --------------------------------------------------------------------------- #
+def filter_glossary_hits(
+    glossary: list[dict[str, object]], document_text: str
+) -> list[dict[str, object]]:
+    if not document_text:
+        return list(glossary)
+    lowered = document_text.lower()
+    hits: list[dict[str, object]] = []
+    for entry in glossary:
+        src = str(entry.get("src") or "")
+        if not src:
+            continue
+        if entry.get("case_sensitive"):
+            found = src in document_text
+        else:
+            found = src.lower() in lowered
+        if found:
+            hits.append(entry)
+    return hits
+
+
+def render_profile(
+    profile: dict[str, object] | None, document_text: str | None = None
+) -> tuple[str, int]:
+    """渲染知识库为提示词文本，返回 (文本, 命中术语数)。"""
+    if not profile:
+        return "", 0
+    glossary = profile.get("glossary") or []
+    if document_text is not None:
+        glossary = filter_glossary_hits(glossary, document_text)
+    style_rules = profile.get("style_rules") or []
+    do_not_translate = list(profile.get("do_not_translate") or [])
+
+    # status=forbidden 的术语当作禁译（保留原文），不作为对照译法
+    forbidden = [e for e in glossary if e.get("status") == "forbidden"]
+    translate_terms = [e for e in glossary if e.get("status") != "forbidden"]
+    do_not_translate.extend(str(e.get("src")) for e in forbidden if e.get("src"))
+
+    blocks: list[str] = []
+    if translate_terms:
+        lines = ["术语对照（出现在本文档中，翻译时必须遵守）:"]
+        for entry in translate_terms:
+            dst = entry.get("dst") or ""
+            note = entry.get("note") or ""
+            domain = entry.get("domain") or ""
+            tags = "、".join(x for x in [domain, note] if x)
+            suffix = f"  // {tags}" if tags else ""
+            lines.append(f"- {entry.get('src')} = {dst}{suffix}")
+        blocks.append("\n".join(lines))
+    if style_rules:
+        blocks.append("风格要求:\n" + "\n".join(f"- {rule}" for rule in style_rules))
+    if do_not_translate:
+        blocks.append("禁译（保留原文）:\n" + "、".join(str(x) for x in do_not_translate))
+
+    # 翻译记忆：注入原文出现在本文档中的历史句对，供参考保持一致
+    tm = profile.get("tm") or []
+    if tm:
+        if document_text is not None:
+            lowered = document_text.lower()
+            tm = [p for p in tm if str(p.get("src") or "").lower() in lowered]
+        tm = tm[:30]
+        if tm:
+            tm_lines = ["翻译记忆（历史译法，供参考以保持一致）:"]
+            for pair in tm:
+                tm_lines.append(f"- {pair.get('src')} => {pair.get('dst')}")
+            blocks.append("\n".join(tm_lines))
+
+    text = "\n\n".join(blocks).strip()
+    if len(text) > PROMPT_BUDGET:
+        text = text[:PROMPT_BUDGET].rstrip() + "\n[Knowledge base truncated to fit prompt budget.]"
+    return text, len(translate_terms)
+
+
+# --------------------------------------------------------------------------- #
+# CSV 导入 / 导出（标准格式互通第一步）
+# --------------------------------------------------------------------------- #
+CSV_FIELDS = ["src", "dst", "domain", "pos", "status", "note"]
+_CSV_ALIASES = {
+    "src": {"src", "source", "english", "en", "原文", "term", "源"},
+    "dst": {"dst", "target", "chinese", "zh", "译文", "translation", "目标"},
+    "domain": {"domain", "领域", "field", "subject", "学科"},
+    "pos": {"pos", "词性", "part_of_speech"},
+    "status": {"status", "状态"},
+    "note": {"note", "备注", "comment", "notes"},
+}
+
+
+def profile_to_csv(profile: dict[str, object]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(CSV_FIELDS)
+    for entry in profile.get("glossary") or []:
+        writer.writerow([entry.get(field, "") for field in CSV_FIELDS])
+    return out.getvalue()
+
+
+# --------------------------------------------------------------------------- #
+# TBX（术语库）/ TMX（翻译记忆）导入导出
+# --------------------------------------------------------------------------- #
+def _localname(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def _lang_of(element: ET.Element) -> str:
+    for key, value in element.attrib.items():
+        if key.rsplit("}", 1)[-1].lower() == "lang":
+            return value
+    for child in element:
+        if _localname(child.tag) == "language":
+            for key, value in child.attrib.items():
+                if key.rsplit("}", 1)[-1].lower() == "lang":
+                    return value
+    return ""
+
+
+def _first_term_text(element: ET.Element) -> str:
+    for node in element.iter():
+        if _localname(node.tag) == "term" and (node.text or "").strip():
+            return node.text.strip()
+    return ""
+
+
+def _pick_lang(bucket: dict[str, str], want: str) -> str:
+    for lang, term in bucket.items():
+        if lang.lower().startswith(want.lower()):
+            return term
+    return ""
+
+
+def _iter_pairs_from_groups(root: ET.Element, group_names: set[str], src_lang: str, dst_lang: str):
+    for entry in root.iter():
+        if _localname(entry.tag) not in group_names:
+            continue
+        bucket: dict[str, str] = {}
+        for sub in entry:
+            if _localname(sub.tag) in ("langset", "languagegrp", "tuv"):
+                lang = _lang_of(sub)
+                term = _first_term_text(sub) or _seg_text(sub)
+                if lang and term and lang not in bucket:
+                    bucket[lang] = term
+        src = _pick_lang(bucket, src_lang)
+        dst = _pick_lang(bucket, dst_lang)
+        if src and dst:
+            yield {"src": src, "dst": dst}
+
+
+def _seg_text(element: ET.Element) -> str:
+    for node in element.iter():
+        if _localname(node.tag) == "seg" and (node.text or "").strip():
+            return node.text.strip()
+    return ""
+
+
+def tbx_to_glossary(xml_text: str, src_lang: str = "en", dst_lang: str = "zh") -> list[dict[str, object]]:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    pairs = list(_iter_pairs_from_groups(root, {"termentry", "conceptgrp"}, src_lang, dst_lang))
+    return normalize_glossary(pairs)
+
+
+def glossary_to_tbx(profile: dict[str, object], src_lang: str = "en", dst_lang: str = "zh") -> str:
+    rows = []
+    for i, entry in enumerate(profile.get("glossary") or [], start=1):
+        src = _xml_escape(str(entry.get("src") or ""))
+        dst = _xml_escape(str(entry.get("dst") or ""))
+        if not src:
+            continue
+        rows.append(
+            f'    <termEntry id="t{i}">\n'
+            f'      <langSet xml:lang="{src_lang}"><tig><term>{src}</term></tig></langSet>\n'
+            f'      <langSet xml:lang="{dst_lang}"><tig><term>{dst}</term></tig></langSet>\n'
+            f"    </termEntry>"
+        )
+    body = "\n".join(rows)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<martif type="TBX-Basic" xml:lang="en">\n  <text>\n    <body>\n'
+        f"{body}\n"
+        "    </body>\n  </text>\n</martif>\n"
+    )
+
+
+def tmx_to_tm(xml_text: str, src_lang: str = "en", dst_lang: str = "zh") -> list[dict[str, object]]:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    return normalize_tm(list(_iter_pairs_from_groups(root, {"tu"}, src_lang, dst_lang)))
+
+
+def tm_to_tmx(profile: dict[str, object], src_lang: str = "en", dst_lang: str = "zh") -> str:
+    rows = []
+    for pair in profile.get("tm") or []:
+        src = _xml_escape(str(pair.get("src") or ""))
+        dst = _xml_escape(str(pair.get("dst") or ""))
+        if not src:
+            continue
+        rows.append(
+            "    <tu>\n"
+            f'      <tuv xml:lang="{src_lang}"><seg>{src}</seg></tuv>\n'
+            f'      <tuv xml:lang="{dst_lang}"><seg>{dst}</seg></tuv>\n'
+            "    </tu>"
+        )
+    body = "\n".join(rows)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<tmx version="1.4">\n  <header creationtool="yige-pdf-studio" srclang="en" '
+        'datatype="plaintext" segtype="sentence"/>\n  <body>\n'
+        f"{body}\n"
+        "  </body>\n</tmx>\n"
+    )
+
+
+def normalize_tm(raw: object) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    if not isinstance(raw, list):
+        return out
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        src = _clean_str(item.get("src"), 1000)
+        dst = _clean_str(item.get("dst"), 1000)
+        if not src or src.lower() in seen:
+            continue
+        seen.add(src.lower())
+        out.append({"src": src, "dst": dst})
+    return out
+
+
+def merge_glossary(
+    base: list[dict[str, object]], incoming: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """按 src（忽略大小写）去重合并，incoming 覆盖 base。"""
+    by_key: dict[str, dict[str, object]] = {}
+    for entry in normalize_glossary(base):
+        by_key[str(entry.get("src", "")).lower()] = entry
+    for entry in normalize_glossary(incoming):
+        by_key[str(entry.get("src", "")).lower()] = entry
+    return list(by_key.values())
+
+
+def csv_to_glossary(text: str) -> list[dict[str, object]]:
+    """解析 CSV：识别表头（含中英列名）；无表头则按 src,dst,domain,note 顺序。"""
+    rows = list(csv.reader(io.StringIO(text.replace("\r\n", "\n"))))
+    if not rows:
+        return []
+    header = [h.strip().lower() for h in rows[0]]
+    all_aliases = set().union(*_CSV_ALIASES.values())
+    raw: list[dict[str, object]] = []
+    if any(h in all_aliases for h in header):
+        col: dict[str, int] = {}
+        for i, name in enumerate(header):
+            for field, aliases in _CSV_ALIASES.items():
+                if name in aliases:
+                    col[field] = i
+        for row in rows[1:]:
+            def cell(field: str, _row: list[str] = None) -> str:  # noqa: ANN001
+                r = _row if _row is not None else row
+                i = col.get(field)
+                return r[i].strip() if i is not None and i < len(r) else ""
+
+            if cell("src"):
+                raw.append({field: cell(field) for field in CSV_FIELDS})
+    else:
+        for row in rows:
+            if not row or not row[0].strip():
+                continue
+            raw.append(
+                {
+                    "src": row[0].strip(),
+                    "dst": row[1].strip() if len(row) > 1 else "",
+                    "domain": row[2].strip() if len(row) > 2 else "",
+                    "note": row[3].strip() if len(row) > 3 else "",
+                }
+            )
+    return normalize_glossary(raw)

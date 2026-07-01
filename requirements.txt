@@ -5,3 +5,6 @@ PyMuPDF>=1.25.1
 httpx>=0.28.1
 pydantic>=2.11.7
 pdf2zh>=1.9.11
+mcp>=1.26.0
+# 可选：选用 Argos 离线翻译 provider 时需要（首次运行会联网下载语言模型，之后离线）
+argostranslate>=1.9.0
