@@ -9,6 +9,7 @@ const baseUrl = document.querySelector("#baseUrl");
 const model = document.querySelector("#model");
 const apiKey = document.querySelector("#apiKey");
 const preserveToc = document.querySelector("#preserveToc");
+const improvePagebreak = document.querySelector("#improvePagebreak");
 const protectedPages = document.querySelector("#protectedPages");
 const knowledgeSource = document.querySelector("#knowledgeSource");
 const documentType = document.querySelector("#documentType");
@@ -183,6 +184,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("model", model.value.trim());
   formData.append("api_key", apiKey.value.trim());
   formData.append("preserve_toc", preserveToc.checked ? "true" : "false");
+  formData.append("improve_pagebreak", improvePagebreak.checked ? "true" : "false");
   formData.append("protected_pages", protectedPages.value.trim());
   formData.append("knowledge_name", knowledgeProfile.value || "");
   formData.append("knowledge_source", knowledgeSource.value || "local");
@@ -655,6 +657,83 @@ document.querySelectorAll(".pane-zoom").forEach((btn) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     document.querySelectorAll(".preview-pane.is-max").forEach((p) => p.classList.remove("is-max"));
+  }
+});
+
+/* ============ 对照模式（pdf.js 双栏同步） ============ */
+const compareToggle = document.querySelector("#compareToggle");
+const compareView = document.querySelector("#compareView");
+const previewGrid = document.querySelector(".preview-grid");
+const syncWrap = document.querySelector("#syncWrap");
+const syncScroll = document.querySelector("#syncScroll");
+const compareHint = document.querySelector("#compareHint");
+const cmpSource = document.querySelector("#cmpSource");
+const cmpTranslated = document.querySelector("#cmpTranslated");
+
+let pdfjsLib = null;
+let compareOn = false;
+
+async function ensurePdfjs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import("/vendor/pdfjs/pdf.min.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+  }
+  return pdfjsLib;
+}
+
+async function renderPdfInto(url, container) {
+  container.innerHTML = `<div class="cmp-loading">加载中…</div>`;
+  if (!url) {
+    container.innerHTML = `<div class="cmp-loading">暂无内容</div>`;
+    return;
+  }
+  try {
+    const lib = await ensurePdfjs();
+    const doc = await lib.getDocument(url).promise;
+    container.innerHTML = "";
+    const targetWidth = Math.max(200, container.clientWidth - 24);
+    for (let n = 1; n <= doc.numPages; n += 1) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: targetWidth / base.width });
+      const canvas = document.createElement("canvas");
+      canvas.className = "cmp-page";
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      container.append(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    }
+  } catch (error) {
+    container.innerHTML = `<div class="cmp-loading">渲染失败：${escapeHtml(error.message || error)}</div>`;
+  }
+}
+
+let syncLock = false;
+function mirrorScroll(from, to) {
+  if (!syncScroll.checked || syncLock) {
+    return;
+  }
+  syncLock = true;
+  const denom = Math.max(1, from.scrollHeight - from.clientHeight);
+  to.scrollTop = (from.scrollTop / denom) * (to.scrollHeight - to.clientHeight);
+  requestAnimationFrame(() => {
+    syncLock = false;
+  });
+}
+cmpSource.addEventListener("scroll", () => mirrorScroll(cmpSource, cmpTranslated));
+cmpTranslated.addEventListener("scroll", () => mirrorScroll(cmpTranslated, cmpSource));
+
+compareToggle.addEventListener("click", async () => {
+  compareOn = !compareOn;
+  previewGrid.hidden = compareOn;
+  compareView.hidden = !compareOn;
+  syncWrap.hidden = !compareOn;
+  compareHint.hidden = !compareOn;
+  compareToggle.classList.toggle("compare-toggle-active", compareOn);
+  compareToggle.textContent = compareOn ? "退出对照" : "对照模式";
+  if (compareOn) {
+    await renderPdfInto(sourcePreview.getAttribute("src"), cmpSource);
+    await renderPdfInto(translatedPreview.getAttribute("src"), cmpTranslated);
   }
 });
 

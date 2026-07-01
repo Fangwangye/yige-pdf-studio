@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import shutil
 import threading
 import time
@@ -33,6 +34,8 @@ JOB_DIR = STORAGE_DIR / "jobs"
 _JOB_STATUS_LOCKS: dict[str, threading.RLock] = {}
 _JOB_STATUS_LOCKS_LOCK = threading.Lock()
 
+mimetypes.add_type("text/javascript", ".mjs")  # 保证 pdf.js 的 .mjs 以模块类型返回
+
 app = FastAPI(title="PDF Translate")
 
 
@@ -56,6 +59,7 @@ async def translate_pdf(
     knowledge_source: str = Form("local"),
     document_type: str = Form(""),
     keep_sections: str | None = Form(None),
+    improve_pagebreak: bool = Form(False),
 ) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -87,6 +91,7 @@ async def translate_pdf(
         knowledge_source="mcp" if knowledge_source == "mcp" else "local",
         document_type=document_type or "",
         keep_sections=doc_sections.normalize_keep_sections(keep_sections),
+        improve_layout=bool(improve_pagebreak),
     )
     _write_job_status(
         job_id,
@@ -166,7 +171,7 @@ def get_job_status(job_id: str) -> dict[str, object]:
     path = _job_status_path(job_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Job not found.")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _read_json_retry(path)
 
 
 @app.get("/api/jobs/{job_id}/report")
@@ -175,7 +180,7 @@ def get_job_report(job_id: str) -> dict[str, object]:
     path = _job_status_path(job_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Job not found.")
-    return _build_quality_report(json.loads(path.read_text(encoding="utf-8")))
+    return _build_quality_report(_read_json_retry(path))
 
 
 @app.get("/api/files/{job_id}")
@@ -307,6 +312,18 @@ def _job_status_path(job_id: str) -> Path:
 def _read_job_status(job_id: str) -> dict[str, object]:
     path = _job_status_path(job_id)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_json_retry(path: Path, attempts: int = 12) -> dict[str, object]:
+    """读 job 状态文件；容忍写入瞬间的文件锁/半写状态并重试。"""
+    for attempt in range(attempts):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (PermissionError, json.JSONDecodeError):
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    raise RuntimeError("unreachable")
 
 
 def _write_job_status(job_id: str, data: dict[str, object]) -> None:

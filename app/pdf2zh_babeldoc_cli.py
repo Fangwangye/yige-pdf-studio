@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from pdf2zh.pdf2zh import yadt_main
@@ -34,6 +35,30 @@ def _patch_argos_translator() -> None:
         del argos.translate  # 回落到 BaseTranslator.translate（带缓存的正确入口）
 
 
+def _patch_babeldoc_config(disable_rich_text: bool) -> None:
+    """给 babeldoc 的 TranslationConfig 注入默认值（pdf2zh 的 yadt_main 不透传这些）：
+
+    - 始终去掉 BabelDOC 往译文里加的推广水印/横幅。
+    - 可选：禁用富文本翻译，减少段内碎片化、改善衔接（实验）。
+    """
+    try:
+        from babeldoc.translation_config import TranslationConfig, WatermarkOutputMode
+    except Exception:
+        return
+    original = TranslationConfig.__init__
+    if getattr(original, "_yige_patched", False):
+        return
+
+    def __init__(self, *args, **kwargs):  # noqa: N807
+        kwargs.setdefault("watermark_output_mode", WatermarkOutputMode.NoWatermark)
+        if disable_rich_text:
+            kwargs.setdefault("disable_rich_text_translate", True)
+        return original(self, *args, **kwargs)
+
+    __init__._yige_patched = True
+    TranslationConfig.__init__ = __init__
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run pdf2zh BabelDOC without double-reading prompt files.")
     parser.add_argument("files", nargs="+")
@@ -52,6 +77,9 @@ def main() -> int:
     args.raw_pages = [args.pages] if args.pages else []
     if args.service.split(":", 1)[0] == "argos":
         _patch_argos_translator()
+    _patch_babeldoc_config(
+        disable_rich_text=os.environ.get("YIGE_BABELDOC_RICHTEXT_OFF") == "1"
+    )
     return yadt_main(args)
 
 

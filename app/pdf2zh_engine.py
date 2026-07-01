@@ -34,6 +34,7 @@ class Pdf2zhConfig:
     knowledge_source: str = "local"  # "local" | "mcp"
     document_type: str = ""
     keep_sections: tuple[str, ...] = ()
+    improve_layout: bool = False  # 实验：babeldoc 禁用富文本翻译，改善跨页/段内衔接
 
 
 class Pdf2zhError(RuntimeError):
@@ -93,6 +94,8 @@ def _translate_with_pdf2zh_sync(
             "PYTHONIOENCODING": "utf-8",
         }
     )
+    if config.improve_layout:
+        env["YIGE_BABELDOC_RICHTEXT_OFF"] = "1"
     if not is_argos:
         env.update(
             {

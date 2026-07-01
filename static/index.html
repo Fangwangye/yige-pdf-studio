@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260630-zoom-speed" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-compare2" />
   </head>
   <body>
     <div class="layout">
@@ -80,6 +80,15 @@
 
             <section class="status-line" id="statusLine">等待上传 PDF。</section>
 
+            <div class="compare-bar">
+              <button id="compareToggle" class="btn btn-ghost btn-sm" type="button">对照模式</button>
+              <label class="compare-sync" id="syncWrap" hidden>
+                <input id="syncScroll" type="checkbox" checked />
+                <span>同步滚动</span>
+              </label>
+              <span class="compare-hint" id="compareHint" hidden>pdf.js 渲染 · 关闭同步则各自独立滚动</span>
+            </div>
+
             <div class="preview-grid">
               <article class="preview-pane">
                 <div class="pane-header">
@@ -101,6 +110,23 @@
                   </div>
                 </div>
                 <iframe id="translatedPreview" title="翻译后 PDF 预览"></iframe>
+              </article>
+            </div>
+
+            <div class="compare-view" id="compareView" hidden>
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>待翻译 PDF</h2>
+                  <span id="cmpSourceMeta" class="muted">对照</span>
+                </div>
+                <div class="compare-scroll" id="cmpSource"></div>
+              </article>
+              <article class="preview-pane">
+                <div class="pane-header">
+                  <h2>翻译后 PDF</h2>
+                  <span id="cmpTransMeta" class="muted">对照</span>
+                </div>
+                <div class="compare-scroll" id="cmpTranslated"></div>
               </article>
             </div>
           </section>
@@ -245,6 +271,10 @@
                     <input id="preserveToc" type="checkbox" checked />
                     <span>保留目录页</span>
                   </label>
+                  <label class="field toggle-field">
+                    <input id="improvePagebreak" type="checkbox" />
+                    <span>改善页衔接（实验）</span>
+                  </label>
                   <label class="field">
                     <span>知识来源</span>
                     <select id="knowledgeSource">
@@ -319,6 +349,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260630-zoom-speed" defer></script>
+    <script src="/app.js?v=20260701-compare2" defer></script>
   </body>
 </html>
