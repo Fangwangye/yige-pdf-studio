@@ -537,6 +537,20 @@ iframe { width: 100%; height: 100%; border: 0; background: #666966; }
 /* ============ 帮助 / 路线图 ============ */
 .help-steps { margin: 0; padding-left: 20px; display: grid; gap: 9px; font-size: 14px; line-height: 1.5; }
 .help-steps strong { color: var(--accent-dark); }
+.help-tips { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.help-tips strong { color: var(--accent-dark); }
+
+.flow-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.flow-step {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.flow-arrow { color: var(--accent); font-weight: 700; }
 .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .phase {
   border: 1px solid var(--line);

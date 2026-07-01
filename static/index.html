@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260701-jobdel" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-help" />
   </head>
   <body>
     <div class="layout">
@@ -316,43 +316,63 @@
           <section class="view" data-panel="help">
             <div class="card">
               <div class="card-head">
-                <h2>快速上手</h2>
+                <h2>标准使用流程</h2>
+                <p class="card-desc">第一次用按这五步走，之后重复第 3–5 步即可。</p>
               </div>
               <ol class="help-steps">
-                <li><strong>接入设置</strong>：填 Base URL / 模型 / API Key（或选 Mock 仅测版式）。</li>
-                <li><strong>知识库</strong>：选一套术语/风格规则，或新建保存自己的。</li>
-                <li><strong>翻译工作台</strong>：选 PDF → 设语言 → 开始翻译，左右对照预览。</li>
-                <li><strong>任务与质检</strong>：查看历史任务、占位符/乱码扫描与回退情况。</li>
+                <li><strong>配置服务商</strong>（接入设置）：填 Base URL / 模型 / API Key；没有 Key 想先看效果就选 Argos 离线或 Mock。</li>
+                <li><strong>准备知识库</strong>（知识库）：选或新建一套术语/风格/禁译规则，保存；决定翻译的专业度与一致性。</li>
+                <li><strong>选文档类型 + 分段</strong>（接入设置 → 文档结构）：选类型自动套知识库，勾选要保留原文的段落（目录/参考文献等）。</li>
+                <li><strong>上传并翻译</strong>（翻译工作台）：选 PDF → 设语言 → 开始翻译；长文档把并发线程调到 8–16 更快。</li>
+                <li><strong>对照与质检</strong>：用「对照模式」左右同步核对；到「任务与质检」看占位符/乱码扫描与命中术语数。</li>
               </ol>
             </div>
+
             <div class="card">
               <div class="card-head">
-                <h2>能力路线图</h2>
-                <p class="card-desc">详见 <code>docs/功能说明/路线图.md</code>。</p>
+                <h2>翻译时发生了什么</h2>
+                <p class="card-desc">了解流程有助于判断在哪一步调优。</p>
               </div>
-              <div class="roadmap">
-                <div class="phase phase-now">
-                  <span class="phase-tag">一期 · 进行中</span>
-                  <strong>结构化术语知识库</strong>
-                  <p>术语对照表 + 风格规则 + 禁译表，按命中注入、跨文档复用、导入导出。</p>
-                </div>
-                <div class="phase">
-                  <span class="phase-tag">二期</span>
-                  <strong>MCP 检索接入</strong>
-                  <p>术语 / 风格库外置到 MCP 服务，翻译时实时检索注入，多系统共享。</p>
-                </div>
-                <div class="phase">
-                  <span class="phase-tag">三期</span>
-                  <strong>Claude Skill 封装</strong>
-                  <p>把翻译引擎封装成 skill/agent，让 Claude Code 直接调度整条流水线。</p>
-                </div>
+              <div class="flow-line">
+                <span class="flow-step">上传 PDF</span><span class="flow-arrow">→</span>
+                <span class="flow-step">版面解析（BabelDOC）</span><span class="flow-arrow">→</span>
+                <span class="flow-step">抽取文档上下文</span><span class="flow-arrow">→</span>
+                <span class="flow-step">注入知识库/术语</span><span class="flow-arrow">→</span>
+                <span class="flow-step">分块翻译并重排</span><span class="flow-arrow">→</span>
+                <span class="flow-step">质检 / 异常页回退</span><span class="flow-arrow">→</span>
+                <span class="flow-step">生成译文 PDF</span>
               </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>分场景建议</h2>
+              </div>
+              <ul class="help-tips">
+                <li><strong>学术论文</strong>：文档类型选「学术论文」，勾选保留「参考文献/附录」；术语一致性要求高时用 OpenAI-compatible + 知识库（Argos 不吃术语）。</li>
+                <li><strong>技术文档</strong>：把 API/SDK/命令/配置项放进「禁译」；代码块勾选保留原文。</li>
+                <li><strong>合同</strong>：条款编号/金额/日期加入禁译，风格选正式稳健，逐条核对不要弱化义务。</li>
+                <li><strong>只想快速读懂</strong>：可接受版式一般，优先把并发调大、质量模式选「速度优先」。</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>遇到问题怎么排查</h2>
+              </div>
+              <ul class="help-tips">
+                <li><strong>右侧没出译文</strong> → 到「任务与质检」看任务状态；failed 会显示引擎错误摘要。</li>
+                <li><strong>术语没按知识库翻</strong> → 确认翻译前已选对应知识库；且服务商不是 Argos（NMT 不吃提示词）。</li>
+                <li><strong>太慢</strong> → 接入设置把「并发线程」调到 8–16（注意服务商限流）；首次运行还要下载模型。</li>
+                <li><strong>乱码/占位符</strong> → 质检报告定位到具体页，必要时切 legacy 引擎重试。</li>
+                <li><strong>跨页/跨栏断裂</strong> → 保版式的固有限制；可开「改善页衔接（实验）」缓解段内碎片。</li>
+              </ul>
             </div>
           </section>
         </div>
       </main>
     </div>
 
-    <script src="/app.js?v=20260701-jobdel" defer></script>
+    <script src="/app.js?v=20260701-help" defer></script>
   </body>
 </html>
