@@ -518,6 +518,9 @@ function renderGlossary(entries) {
 function appendGlossaryRow(entry) {
   const row = document.createElement("tr");
   const status = entry.status || "preferred";
+  // pos / definition 暂不在表格里编辑，挂到行上以便保存时保留（避免导入的专业字段丢失）
+  row.dataset.pos = entry.pos || "";
+  row.dataset.definition = entry.definition || "";
   row.innerHTML = `
     <td><input class="g-src" type="text" value="${escapeAttr(entry.src)}" placeholder="source term" /></td>
     <td><input class="g-dst" type="text" value="${escapeAttr(entry.dst)}" placeholder="目标译法" /></td>
@@ -546,6 +549,8 @@ function readEditorProfile(name) {
       src,
       dst: row.querySelector(".g-dst").value.trim(),
       domain: row.querySelector(".g-domain").value.trim(),
+      pos: row.dataset.pos || "",
+      definition: row.dataset.definition || "",
       status: row.querySelector(".g-status").value,
       note: row.querySelector(".g-note").value.trim(),
       case_sensitive: row.querySelector(".g-cs").checked,
