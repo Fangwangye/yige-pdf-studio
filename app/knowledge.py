@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 import uuid
@@ -68,6 +70,52 @@ DEFAULT_PROFILES: list[dict[str, object]] = [
         ],
         "do_not_translate": ["条款编号", "金额", "日期", "主体名称"],
     },
+    {
+        # 原创整理的计算机 / AI 领域术语种子库（自建，无第三方版权）。
+        "name": "计算机与AI",
+        "glossary": [
+            {"src": "large language model", "dst": "大语言模型", "domain": "AI"},
+            {"src": "transformer", "dst": "Transformer", "domain": "AI", "status": "forbidden"},
+            {"src": "attention", "dst": "注意力", "domain": "AI"},
+            {"src": "self-attention", "dst": "自注意力", "domain": "AI"},
+            {"src": "embedding", "dst": "嵌入", "domain": "AI"},
+            {"src": "token", "dst": "词元", "domain": "NLP"},
+            {"src": "tokenizer", "dst": "分词器", "domain": "NLP"},
+            {"src": "fine-tuning", "dst": "微调", "domain": "AI"},
+            {"src": "pre-training", "dst": "预训练", "domain": "AI"},
+            {"src": "inference", "dst": "推理", "domain": "AI"},
+            {"src": "prompt", "dst": "提示词", "domain": "AI"},
+            {"src": "hallucination", "dst": "幻觉", "domain": "AI"},
+            {"src": "reinforcement learning", "dst": "强化学习", "domain": "AI"},
+            {"src": "gradient descent", "dst": "梯度下降", "domain": "ML"},
+            {"src": "overfitting", "dst": "过拟合", "domain": "ML"},
+            {"src": "regularization", "dst": "正则化", "domain": "ML"},
+            {"src": "convolutional neural network", "dst": "卷积神经网络", "domain": "ML"},
+            {"src": "recurrent neural network", "dst": "循环神经网络", "domain": "ML"},
+            {"src": "backpropagation", "dst": "反向传播", "domain": "ML"},
+            {"src": "benchmark", "dst": "基准测试", "domain": "AI"},
+            {"src": "latency", "dst": "延迟", "domain": "系统"},
+            {"src": "throughput", "dst": "吞吐量", "domain": "系统"},
+            {"src": "concurrency", "dst": "并发", "domain": "系统"},
+            {"src": "cache", "dst": "缓存", "domain": "系统"},
+            {"src": "deployment", "dst": "部署", "domain": "工程"},
+            {"src": "pipeline", "dst": "流水线", "domain": "工程"},
+            {"src": "repository", "dst": "仓库", "domain": "工程"},
+            {"src": "dependency", "dst": "依赖", "domain": "工程"},
+            {"src": "middleware", "dst": "中间件", "domain": "工程"},
+            {"src": "endpoint", "dst": "端点", "domain": "工程"},
+            {"src": "load balancing", "dst": "负载均衡", "domain": "系统"},
+            {"src": "scalability", "dst": "可扩展性", "domain": "系统"},
+            {"src": "API", "dst": "API", "domain": "工程", "status": "forbidden"},
+            {"src": "SDK", "dst": "SDK", "domain": "工程", "status": "forbidden"},
+        ],
+        "style_rules": [
+            "使用准确、简洁的技术中文。",
+            "保留命令、代码、配置项、接口名、库名和错误信息原文。",
+            "首次出现的重要英文术语可采用“中文译名（English Term）”。",
+        ],
+        "do_not_translate": ["代码", "命令", "配置项", "接口名", "库名", "公式"],
+    },
 ]
 
 
@@ -83,6 +131,9 @@ def _clean_str(value: object, limit: int = 400) -> str:
     return text[:limit]
 
 
+TERM_STATUSES = ("preferred", "forbidden", "deprecated")
+
+
 def normalize_glossary(raw: object) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     if not isinstance(raw, list):
@@ -94,10 +145,17 @@ def normalize_glossary(raw: object) -> list[dict[str, object]]:
         dst = _clean_str(item.get("dst"), 200)
         if not src:
             continue
+        status = _clean_str(item.get("status"), 20).lower()
+        if status not in TERM_STATUSES:
+            status = "preferred"
         entries.append(
             {
                 "src": src,
                 "dst": dst,
+                "domain": _clean_str(item.get("domain"), 60),
+                "pos": _clean_str(item.get("pos"), 30),
+                "definition": _clean_str(item.get("definition"), 400),
+                "status": status,
                 "case_sensitive": bool(item.get("case_sensitive", False)),
                 "note": _clean_str(item.get("note"), 200),
             }
@@ -305,15 +363,22 @@ def render_profile(
     if document_text is not None:
         glossary = filter_glossary_hits(glossary, document_text)
     style_rules = profile.get("style_rules") or []
-    do_not_translate = profile.get("do_not_translate") or []
+    do_not_translate = list(profile.get("do_not_translate") or [])
+
+    # status=forbidden 的术语当作禁译（保留原文），不作为对照译法
+    forbidden = [e for e in glossary if e.get("status") == "forbidden"]
+    translate_terms = [e for e in glossary if e.get("status") != "forbidden"]
+    do_not_translate.extend(str(e.get("src")) for e in forbidden if e.get("src"))
 
     blocks: list[str] = []
-    if glossary:
+    if translate_terms:
         lines = ["术语对照（出现在本文档中，翻译时必须遵守）:"]
-        for entry in glossary:
+        for entry in translate_terms:
             dst = entry.get("dst") or ""
             note = entry.get("note") or ""
-            suffix = f"  // {note}" if note else ""
+            domain = entry.get("domain") or ""
+            tags = "、".join(x for x in [domain, note] if x)
+            suffix = f"  // {tags}" if tags else ""
             lines.append(f"- {entry.get('src')} = {dst}{suffix}")
         blocks.append("\n".join(lines))
     if style_rules:
@@ -324,4 +389,76 @@ def render_profile(
     text = "\n\n".join(blocks).strip()
     if len(text) > PROMPT_BUDGET:
         text = text[:PROMPT_BUDGET].rstrip() + "\n[Knowledge base truncated to fit prompt budget.]"
-    return text, len(glossary)
+    return text, len(translate_terms)
+
+
+# --------------------------------------------------------------------------- #
+# CSV 导入 / 导出（标准格式互通第一步）
+# --------------------------------------------------------------------------- #
+CSV_FIELDS = ["src", "dst", "domain", "pos", "status", "note"]
+_CSV_ALIASES = {
+    "src": {"src", "source", "english", "en", "原文", "term", "源"},
+    "dst": {"dst", "target", "chinese", "zh", "译文", "translation", "目标"},
+    "domain": {"domain", "领域", "field", "subject", "学科"},
+    "pos": {"pos", "词性", "part_of_speech"},
+    "status": {"status", "状态"},
+    "note": {"note", "备注", "comment", "notes"},
+}
+
+
+def profile_to_csv(profile: dict[str, object]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(CSV_FIELDS)
+    for entry in profile.get("glossary") or []:
+        writer.writerow([entry.get(field, "") for field in CSV_FIELDS])
+    return out.getvalue()
+
+
+def merge_glossary(
+    base: list[dict[str, object]], incoming: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """按 src（忽略大小写）去重合并，incoming 覆盖 base。"""
+    by_key: dict[str, dict[str, object]] = {}
+    for entry in normalize_glossary(base):
+        by_key[str(entry.get("src", "")).lower()] = entry
+    for entry in normalize_glossary(incoming):
+        by_key[str(entry.get("src", "")).lower()] = entry
+    return list(by_key.values())
+
+
+def csv_to_glossary(text: str) -> list[dict[str, object]]:
+    """解析 CSV：识别表头（含中英列名）；无表头则按 src,dst,domain,note 顺序。"""
+    rows = list(csv.reader(io.StringIO(text.replace("\r\n", "\n"))))
+    if not rows:
+        return []
+    header = [h.strip().lower() for h in rows[0]]
+    all_aliases = set().union(*_CSV_ALIASES.values())
+    raw: list[dict[str, object]] = []
+    if any(h in all_aliases for h in header):
+        col: dict[str, int] = {}
+        for i, name in enumerate(header):
+            for field, aliases in _CSV_ALIASES.items():
+                if name in aliases:
+                    col[field] = i
+        for row in rows[1:]:
+            def cell(field: str, _row: list[str] = None) -> str:  # noqa: ANN001
+                r = _row if _row is not None else row
+                i = col.get(field)
+                return r[i].strip() if i is not None and i < len(r) else ""
+
+            if cell("src"):
+                raw.append({field: cell(field) for field in CSV_FIELDS})
+    else:
+        for row in rows:
+            if not row or not row[0].strip():
+                continue
+            raw.append(
+                {
+                    "src": row[0].strip(),
+                    "dst": row[1].strip() if len(row) > 1 else "",
+                    "domain": row[2].strip() if len(row) > 2 else "",
+                    "note": row[3].strip() if len(row) > 3 else "",
+                }
+            )
+    return normalize_glossary(raw)

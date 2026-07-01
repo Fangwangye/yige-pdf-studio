@@ -68,14 +68,21 @@ https://api.example.com/v1
 
 ```jsonc
 {
-  "name": "学术论文",
-  "glossary": [{ "src": "large language model", "dst": "大语言模型", "case_sensitive": false, "note": "" }],
-  "style_rules": ["使用正式、流畅的学术中文"],
-  "do_not_translate": ["模型名", "公式", "引用"]
+  "name": "计算机与AI",
+  "glossary": [
+    { "src": "large language model", "dst": "大语言模型",
+      "domain": "AI", "pos": "", "definition": "",
+      "status": "preferred", "case_sensitive": false, "note": "" }
+  ],
+  "style_rules": ["使用准确、简洁的技术中文"],
+  "do_not_translate": ["代码", "命令", "公式"]
 }
 ```
 
-- 前端在「知识库」视图用术语表格 + 风格/禁译编辑，CRUD 走 `/api/knowledge*`。
+- 每条术语支持**专业字段**：`domain`（领域）、`pos`（词性）、`definition`（定义）、`status`（`preferred` 推荐 / `forbidden` 禁译 / `deprecated` 弃用）。`status=forbidden` 的术语会自动作为「保留原文」注入。
+- 前端在「知识库」视图用术语表格（原文/译文/领域/状态/备注/大小写）+ 风格/禁译编辑，CRUD 走 `/api/knowledge*`。
+- **标准格式互通**：支持 CSV 导入/导出（`POST /api/knowledge/import-csv`、`GET /api/knowledge/{name}/export.csv`），列名兼容中英；无表头时按 `原文,译文,领域,备注` 解析。
+- 内置一套原创的 **`计算机与AI`** 领域种子术语库（自建，无第三方版权）。其它开源术语库（如机器之心 AI 术语库 CC BY-NC-SA、微软 Terminology）请自行按各自许可证用 CSV/TBX 导入。
 - 翻译时只把**实际出现在文档**中的术语注入提示词，命中数见质检报告（`stats.glossary_hits`）。
 - 导入兼容旧版 `{name, content}` 纯文本（自动解析「术语/风格/禁译」段落）。
 - 知识库优先级高于自动抽取的文档上下文，但不覆盖占位符、公式、引用保护规则。

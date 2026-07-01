@@ -400,12 +400,15 @@ iframe { width: 100%; height: 100%; border: 0; background: #666966; }
 }
 .glossary-table td { padding: 4px 6px; vertical-align: middle; }
 .glossary-table input[type="text"] { min-height: 34px; }
+.glossary-table select { min-height: 34px; padding: 0 6px; }
 .glossary-table .cell-center { text-align: center; }
 .glossary-table .g-cs { width: 18px; min-height: 18px; accent-color: var(--accent); }
-.glossary-table .col-cs { width: 86px; text-align: center; }
+.glossary-table .col-domain { width: 12%; }
+.glossary-table .col-status { width: 82px; }
+.glossary-table .col-note { width: 18%; }
+.glossary-table .col-cs { width: 56px; text-align: center; }
 .glossary-table .col-del { width: 44px; }
 .glossary-table .g-del { min-height: 32px; padding: 0 10px; }
-.col-note { width: 26%; }
 
 /* ============ 任务与质检 ============ */
 .ops-grid {

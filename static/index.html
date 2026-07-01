@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260701-help" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-protermbase" />
   </head>
   <body>
     <div class="layout">
@@ -145,10 +145,15 @@
                 </label>
                 <button id="newKnowledgeProfile" class="btn btn-ghost" type="button">新建</button>
                 <button id="saveKnowledgeProfile" class="btn btn-primary" type="button">保存</button>
-                <button id="exportKnowledgeProfile" class="btn btn-ghost" type="button">导出</button>
+                <button id="exportKnowledgeProfile" class="btn btn-ghost" type="button">导出 JSON</button>
+                <button id="exportCsvProfile" class="btn btn-ghost" type="button">导出 CSV</button>
                 <label class="btn btn-ghost file-action">
-                  <span>导入</span>
+                  <span>导入 JSON</span>
                   <input id="importKnowledgeProfile" type="file" accept="application/json" />
+                </label>
+                <label class="btn btn-ghost file-action">
+                  <span>导入 CSV</span>
+                  <input id="importCsvProfile" type="file" accept=".csv,text/csv" />
                 </label>
                 <button id="deleteKnowledgeProfile" class="btn btn-ghost btn-danger-ghost" type="button">删除</button>
               </div>
@@ -162,8 +167,10 @@
                     <tr>
                       <th class="col-src">原文</th>
                       <th class="col-dst">译文</th>
+                      <th class="col-domain">领域</th>
+                      <th class="col-status">状态</th>
                       <th class="col-note">备注</th>
-                      <th class="col-cs">区分大小写</th>
+                      <th class="col-cs">大小写</th>
                       <th class="col-del"></th>
                     </tr>
                   </thead>
@@ -373,6 +380,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260701-help" defer></script>
+    <script src="/app.js?v=20260701-protermbase" defer></script>
   </body>
 </html>

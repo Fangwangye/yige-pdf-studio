@@ -23,7 +23,9 @@ const doNotTranslate = document.querySelector("#doNotTranslate");
 const newKnowledgeProfile = document.querySelector("#newKnowledgeProfile");
 const saveKnowledgeProfile = document.querySelector("#saveKnowledgeProfile");
 const exportKnowledgeProfile = document.querySelector("#exportKnowledgeProfile");
+const exportCsvProfile = document.querySelector("#exportCsvProfile");
 const importKnowledgeProfile = document.querySelector("#importKnowledgeProfile");
+const importCsvProfile = document.querySelector("#importCsvProfile");
 const deleteKnowledgeProfile = document.querySelector("#deleteKnowledgeProfile");
 const translateButton = document.querySelector("#translateButton");
 const statusLine = document.querySelector("#statusLine");
@@ -100,6 +102,37 @@ exportKnowledgeProfile.addEventListener("click", () => {
   link.download = `${sanitizeFileName(name)}.knowledge.json`;
   link.click();
   URL.revokeObjectURL(url);
+});
+
+exportCsvProfile.addEventListener("click", () => {
+  const name = knowledgeProfile.value || knowledgeProfileName.value.trim();
+  if (!name) {
+    setStatus("请先选择一个知识库。", true);
+    return;
+  }
+  window.open(`/api/knowledge/${encodeURIComponent(name)}/export.csv`, "_blank");
+});
+
+importCsvProfile.addEventListener("change", async () => {
+  const file = importCsvProfile.files?.[0];
+  if (!file) {
+    return;
+  }
+  try {
+    const csv = await file.text();
+    const name = knowledgeProfileName.value.trim() || file.name.replace(/\.csv$/i, "") || "导入术语";
+    const saved = await fetch("/api/knowledge/import-csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, csv }),
+    }).then(assertOk);
+    await refreshKnowledgeProfiles(saved.name);
+    setStatus(`已从 CSV 导入 ${saved.imported ?? 0} 条术语到“${saved.name}”。`);
+  } catch (error) {
+    setStatus(error.message || "CSV 导入失败。", true);
+  } finally {
+    importCsvProfile.value = "";
+  }
 });
 
 importKnowledgeProfile.addEventListener("change", async () => {
@@ -484,10 +517,17 @@ function renderGlossary(entries) {
 
 function appendGlossaryRow(entry) {
   const row = document.createElement("tr");
+  const status = entry.status || "preferred";
   row.innerHTML = `
     <td><input class="g-src" type="text" value="${escapeAttr(entry.src)}" placeholder="source term" /></td>
     <td><input class="g-dst" type="text" value="${escapeAttr(entry.dst)}" placeholder="目标译法" /></td>
-    <td><input class="g-note" type="text" value="${escapeAttr(entry.note)}" placeholder="备注（可选）" /></td>
+    <td><input class="g-domain" type="text" value="${escapeAttr(entry.domain)}" placeholder="领域" /></td>
+    <td><select class="g-status">
+      <option value="preferred" ${status === "preferred" ? "selected" : ""}>推荐</option>
+      <option value="forbidden" ${status === "forbidden" ? "selected" : ""}>禁译</option>
+      <option value="deprecated" ${status === "deprecated" ? "selected" : ""}>弃用</option>
+    </select></td>
+    <td><input class="g-note" type="text" value="${escapeAttr(entry.note)}" placeholder="备注" /></td>
     <td class="cell-center"><input class="g-cs" type="checkbox" ${entry.case_sensitive ? "checked" : ""} /></td>
     <td class="cell-center"><button class="g-del btn btn-ghost btn-sm" type="button" title="删除">✕</button></td>
   `;
@@ -505,6 +545,8 @@ function readEditorProfile(name) {
     glossary.push({
       src,
       dst: row.querySelector(".g-dst").value.trim(),
+      domain: row.querySelector(".g-domain").value.trim(),
+      status: row.querySelector(".g-status").value,
       note: row.querySelector(".g-note").value.trim(),
       case_sensitive: row.querySelector(".g-cs").checked,
     });

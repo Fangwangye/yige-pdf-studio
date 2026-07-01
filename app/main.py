@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import knowledge
@@ -298,6 +298,32 @@ def remove_knowledge(name: str) -> dict[str, object]:
 def import_knowledge(payload: dict = Body(...)) -> dict[str, object]:
     name = str(payload.get("name") or "导入知识库").strip()
     return knowledge.save_profile(name, payload)
+
+
+@app.post("/api/knowledge/import-csv")
+def import_knowledge_csv(payload: dict = Body(...)) -> dict[str, object]:
+    name = str(payload.get("name") or "导入术语").strip()
+    glossary = knowledge.csv_to_glossary(str(payload.get("csv") or ""))
+    if not glossary:
+        raise HTTPException(status_code=400, detail="CSV 未解析到任何术语。")
+    existing = knowledge.load_profile(name) or {}
+    merged = knowledge.merge_glossary(existing.get("glossary") or [], glossary)
+    data = {
+        "name": name,
+        "glossary": merged,
+        "style_rules": existing.get("style_rules") or [],
+        "do_not_translate": existing.get("do_not_translate") or [],
+    }
+    profile = knowledge.save_profile(name, data)
+    return {**profile, "imported": len(glossary)}
+
+
+@app.get("/api/knowledge/{name}/export.csv")
+def export_knowledge_csv(name: str) -> PlainTextResponse:
+    profile = knowledge.load_profile(name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Knowledge profile not found.")
+    return PlainTextResponse(knowledge.profile_to_csv(profile), media_type="text/csv")
 
 
 app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
