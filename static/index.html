@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>译格 PDF Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=20260701-tbxtmx" />
+    <link rel="stylesheet" href="/styles.css?v=20260701-kbswitch" />
   </head>
   <body>
     <div class="layout">
@@ -140,7 +140,11 @@
               </div>
               <div class="knowledge-toolbar">
                 <label class="field">
-                  <span>配置名称 <em class="field-note">（在工作台顶部下拉框切换配置）</em></span>
+                  <span>切换配置</span>
+                  <select id="kbPicker"></select>
+                </label>
+                <label class="field">
+                  <span>配置名称 <em class="field-note">（改名后点保存另存为新配置）</em></span>
                   <input id="knowledgeProfileName" type="text" value="学术论文" autocomplete="off" />
                 </label>
                 <button id="newKnowledgeProfile" class="btn btn-ghost" type="button">新建</button>
@@ -390,6 +394,6 @@
       </main>
     </div>
 
-    <script src="/app.js?v=20260701-tbxtmx" defer></script>
+    <script src="/app.js?v=20260701-kbswitch" defer></script>
   </body>
 </html>

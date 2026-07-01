@@ -15,6 +15,7 @@ const knowledgeSource = document.querySelector("#knowledgeSource");
 const documentType = document.querySelector("#documentType");
 const sectionList = document.querySelector("#sectionList");
 const knowledgeProfile = document.querySelector("#knowledgeProfile");
+const kbPicker = document.querySelector("#kbPicker");
 const knowledgeProfileName = document.querySelector("#knowledgeProfileName");
 const glossaryBody = document.querySelector("#glossaryBody");
 const addGlossaryRow = document.querySelector("#addGlossaryRow");
@@ -58,7 +59,13 @@ document.querySelector("#clearAllJobs").addEventListener("click", () => clearJob
 document.querySelector("#clearFailedJobs").addEventListener("click", () => clearJobs("failed"));
 
 knowledgeProfile.addEventListener("change", () => {
+  kbPicker.value = knowledgeProfile.value;
   loadProfileIntoEditor(knowledgeProfile.value);
+});
+
+kbPicker.addEventListener("change", () => {
+  knowledgeProfile.value = kbPicker.value;
+  loadProfileIntoEditor(kbPicker.value);
 });
 
 addGlossaryRow.addEventListener("click", () => {
@@ -507,15 +514,22 @@ async function refreshKnowledgeProfiles(preferredName) {
   }
   knowledgeNames = profiles.map((item) => item.name);
   knowledgeProfile.innerHTML = "";
+  kbPicker.innerHTML = "";
   for (const item of profiles) {
-    const option = document.createElement("option");
-    option.value = item.name;
-    option.textContent = `${item.name}（${item.glossary_count || 0} 术语）`;
-    knowledgeProfile.append(option);
+    const label = `${item.name}（${item.glossary_count || 0} 术语）`;
+    const opt1 = document.createElement("option");
+    opt1.value = item.name;
+    opt1.textContent = label;
+    knowledgeProfile.append(opt1);
+    const opt2 = document.createElement("option");
+    opt2.value = item.name;
+    opt2.textContent = label;
+    kbPicker.append(opt2);
   }
   const target = knowledgeNames.includes(preferredName) ? preferredName : knowledgeNames[0];
   if (target) {
     knowledgeProfile.value = target;
+    kbPicker.value = target;
     await loadProfileIntoEditor(target);
   } else {
     knowledgeProfileName.value = "";
