@@ -10,6 +10,7 @@ const model = document.querySelector("#model");
 const apiKey = document.querySelector("#apiKey");
 const preserveToc = document.querySelector("#preserveToc");
 const improvePagebreak = document.querySelector("#improvePagebreak");
+const captureTm = document.querySelector("#captureTm");
 const protectedPages = document.querySelector("#protectedPages");
 const knowledgeSource = document.querySelector("#knowledgeSource");
 const documentType = document.querySelector("#documentType");
@@ -263,6 +264,7 @@ translateButton.addEventListener("click", async () => {
   formData.append("api_key", apiKey.value.trim());
   formData.append("preserve_toc", preserveToc.checked ? "true" : "false");
   formData.append("improve_pagebreak", improvePagebreak.checked ? "true" : "false");
+  formData.append("capture_tm", captureTm.checked ? "true" : "false");
   formData.append("protected_pages", protectedPages.value.trim());
   formData.append("knowledge_name", knowledgeProfile.value || "");
   formData.append("knowledge_source", knowledgeSource.value || "local");

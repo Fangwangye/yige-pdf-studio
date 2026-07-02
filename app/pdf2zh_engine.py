@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -35,6 +36,7 @@ class Pdf2zhConfig:
     document_type: str = ""
     keep_sections: tuple[str, ...] = ()
     improve_layout: bool = False  # 实验：babeldoc 禁用富文本翻译，改善跨页/段内衔接
+    capture_tm: bool = False  # 捕获（原文, 译文）句对，回写知识库翻译记忆
 
 
 class Pdf2zhError(RuntimeError):
@@ -96,6 +98,11 @@ def _translate_with_pdf2zh_sync(
     )
     if config.improve_layout:
         env["YIGE_BABELDOC_RICHTEXT_OFF"] = "1"
+    tm_capture_path = work_dir / "tm_capture.jsonl"
+    if config.capture_tm and (config.use_babeldoc or is_argos):
+        if tm_capture_path.exists():
+            tm_capture_path.unlink()
+        env["YIGE_TM_CAPTURE"] = str(tm_capture_path)
     if not is_argos:
         env.update(
             {
@@ -230,6 +237,7 @@ def _translate_with_pdf2zh_sync(
         "knowledge_source": knowledge_source,
         "document_type": config.document_type,
         "kept_sections": section_keep_detail,
+        "tm_captured": _read_tm_capture(tm_capture_path) if config.capture_tm else [],
         "log_tail": _tail(process_output),
     }
 
@@ -343,6 +351,35 @@ def build_document_context(input_path: Path, target_language: str) -> dict[str, 
         "full_text": full_text,
         "all_page_texts": all_page_texts,
     }
+
+
+def _read_tm_capture(path: Path, limit: int = 2000) -> list[dict[str, str]]:
+    """读取子进程捕获的 (原文, 译文) 句对，按原文去重。"""
+    if not path.exists():
+        return []
+    seen: set[str] = set()
+    pairs: list[dict[str, str]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            src = str(item.get("src") or "").strip()
+            dst = str(item.get("dst") or "").strip()
+            key = src.lower()
+            if not src or not dst or key in seen:
+                continue
+            seen.add(key)
+            pairs.append({"src": src, "dst": dst})
+            if len(pairs) >= limit:
+                break
+    except OSError:
+        return []
+    return pairs
 
 
 def _resolve_knowledge(

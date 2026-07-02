@@ -59,6 +59,41 @@ def _patch_babeldoc_config(disable_rich_text: bool) -> None:
     TranslationConfig.__init__ = __init__
 
 
+def _patch_tm_capture(path: str) -> None:
+    """捕获翻译记忆：包裹 BaseTranslator.translate，把真实的（原文, 译文）追加到 JSONL。
+
+    覆盖所有 provider（argos 已回落到 BaseTranslator.translate；OpenAI 类重写的是
+    do_translate，入口仍是 translate）。多线程下用锁保护文件追加。
+    """
+    try:
+        from pdf2zh.translator import BaseTranslator
+    except Exception:
+        return
+    import json
+    import threading
+
+    original = BaseTranslator.translate
+    if getattr(original, "_yige_tm", False):
+        return
+    lock = threading.Lock()
+
+    def translate(self, text, ignore_cache=False):  # noqa: ANN001
+        result = original(self, text, ignore_cache)
+        try:
+            src = (text or "").strip()
+            dst = (result or "").strip()
+            if src and dst and src != dst and len(src) >= 12:
+                line = json.dumps({"src": src, "dst": dst}, ensure_ascii=False)
+                with lock, open(path, "a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+        except Exception:
+            pass
+        return result
+
+    translate._yige_tm = True
+    BaseTranslator.translate = translate
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run pdf2zh BabelDOC without double-reading prompt files.")
     parser.add_argument("files", nargs="+")
@@ -80,6 +115,9 @@ def main() -> int:
     _patch_babeldoc_config(
         disable_rich_text=os.environ.get("YIGE_BABELDOC_RICHTEXT_OFF") == "1"
     )
+    tm_path = os.environ.get("YIGE_TM_CAPTURE")
+    if tm_path:
+        _patch_tm_capture(tm_path)
     return yadt_main(args)
 
 

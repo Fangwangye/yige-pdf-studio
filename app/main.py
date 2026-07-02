@@ -60,6 +60,7 @@ async def translate_pdf(
     document_type: str = Form(""),
     keep_sections: str | None = Form(None),
     improve_pagebreak: bool = Form(False),
+    capture_tm: bool = Form(True),
 ) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -92,6 +93,7 @@ async def translate_pdf(
         document_type=document_type or "",
         keep_sections=doc_sections.normalize_keep_sections(keep_sections),
         improve_layout=bool(improve_pagebreak),
+        capture_tm=bool(capture_tm) and bool(knowledge_profile),
     )
     _write_job_status(
         job_id,
@@ -379,6 +381,26 @@ def export_knowledge_tmx(name: str) -> PlainTextResponse:
 app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
 
 
+def _writeback_tm(config: Pdf2zhConfig, stats: object) -> None:
+    """把翻译过程中捕获的句对合并回所选知识库的翻译记忆（保留最新 2000 条）。"""
+    if not isinstance(stats, dict):
+        return
+    captured = stats.get("tm_captured") if isinstance(stats.get("tm_captured"), list) else []
+    profile = config.knowledge_profile
+    name = (profile or {}).get("name") if profile else None
+    stats.pop("tm_captured", None)
+    if not captured or not name:
+        return
+    current = knowledge.load_profile(name)
+    if current is None:
+        return
+    merged = knowledge.merge_tm(current.get("tm") or [], captured)
+    if len(merged) > 2000:
+        merged = merged[-2000:]
+    knowledge.save_profile(name, {**current, "tm": merged})
+    stats["tm_written"] = len(captured)
+
+
 async def _run_translation_job(
     job_id: str,
     provider: str,
@@ -402,6 +424,7 @@ async def _run_translation_job(
                 config=config,
                 log_callback=update_log,
             )
+        _writeback_tm(config, stats)
         _patch_job_status(
             job_id,
             state="succeeded",
@@ -570,6 +593,15 @@ def _build_quality_report(data: dict[str, object]) -> dict[str, object]:
                 f"{knowledge_name or '用户知识库'} · {source_label} · 命中术语 {glossary_hits} 个"
                 if knowledge_applied
                 else "未应用"
+            ),
+        },
+        {
+            "name": "翻译记忆",
+            "status": "pass" if stats.get("tm_written") else "idle",
+            "detail": (
+                f"本次回写 {stats.get('tm_written')} 条句对"
+                if stats.get("tm_written")
+                else "未回写"
             ),
         },
         {
