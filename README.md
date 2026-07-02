@@ -2,6 +2,8 @@
 
 本项目是一个本地 Web 版 PDF 翻译工作台：左侧预览原 PDF，右侧预览翻译后的 PDF，并支持接入 OpenAI-compatible 三方翻译 API。
 
+![译格 PDF Studio 界面](docs/screenshot.png)
+
 ## 功能
 
 - 左右双栏 PDF 预览：原文 PDF 与译文 PDF 同屏对照，单栏可一键放大（⛶ / Esc 还原）。
